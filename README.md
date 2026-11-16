@@ -10,6 +10,10 @@ V0.6 · macOS · Python standard · Ollama · whisper.cpp · poste de démo **Ag
 
 Les captures de ce fichier viennent du **mode démo** (sans Ollama), avec une candidate fictive, Léa, saisie au clavier le 16 novembre 2026. Le micro mains libres existe ; il n’est pas dans le GIF.
 
+## V2 cloud (en cours)
+
+Une version Next.js (Gemini Live dans le navigateur, avatar LiveAvatar en option, espace recruteur) vit dans [`web/`](web). Le POC Python ci-dessous reste intact. Voir [docs/V2-CLOUD.md](docs/V2-CLOUD.md).
+
 ## La minute de démo
 
 ![Parcours : accueil, intro, expérience, horaires, clôture](docs/media/demo.gif)
