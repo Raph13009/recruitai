@@ -1,0 +1,26 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+recordings/
+interviews/
+tmp/
+*.wav
+*.mp3
+*.mp4
+*.webm
+*.ogg
+*.m4a
+*.aiff
+*.vrm
+
+# Keep demo job JSON; ignore any other local data dumps
+data/*
+!data/demo_job.json
+
+# whisper.cpp is cloned/built by scripts/setup_whisper.sh — do not commit
+tools/whisper.cpp/

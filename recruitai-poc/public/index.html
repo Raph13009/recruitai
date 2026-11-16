@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RecruitAI — Prototype local V0.3</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">◉ RecruitAI <small>POC local · V0.3</small></div>
+    <span class="pill">● Audio et texte traités en local</span>
+  </header>
+
+  <section class="intro">
+    <div>
+      <p class="eyebrow">ENTRETIEN DE DÉMONSTRATION</p>
+      <h1>Un entretien plus humain.<br><em>Avec une IA transparente.</em></h1>
+      <p class="sub">Simulation Interim Express — Agent de quai / manutentionnaire à Lyon. Entretien structuré (~5 min). Entrée vocale locale (whisper.cpp) + texte. Aucun candidat réel, aucune sélection automatisée.</p>
+    </div>
+  </section>
+
+  <div class="layout">
+    <section class="stage">
+      <div class="avatar-wrap">
+        <div class="halo"></div>
+        <div id="avatar" class="avatar">
+          <div class="hair"></div>
+          <div class="face">
+            <div class="eyes"><i></i><i></i></div>
+            <div id="mouth" class="mouth"></div>
+          </div>
+          <div class="body-avatar"></div>
+        </div>
+      </div>
+      <div class="name">Camille · Assistante IA</div>
+      <p id="state" class="state">Prête</p>
+      <div class="progress-wrap" aria-hidden="false">
+        <div class="progress-label"><span>Progression</span><span id="progress-text">0 / 12</span></div>
+        <div class="progress-bar"><i id="progress-fill"></i></div>
+      </div>
+      <div class="controls">
+        <button id="start" class="primary">Commencer l'entretien</button>
+        <button id="mute" class="secondary" aria-pressed="false">Voix : activée</button>
+        <button id="stop-speech" class="secondary" type="button">Stop voix</button>
+      </div>
+      <p class="hint">Avatar 2D volontairement léger. La synthèse vocale utilise le navigateur (hors ligne non garantie). La reconnaissance vocale passe par whisper.cpp en local.</p>
+    </section>
+
+    <section class="chat">
+      <div class="chat-head">
+        <div>
+          <b>Échange candidat</b>
+          <p>Parlez puis validez la transcription, ou tapez. Mode local uniquement.</p>
+        </div>
+        <label class="demo"><input id="demo" type="checkbox"> Mode démo sans Ollama</label>
+      </div>
+      <div id="messages" class="messages">
+        <div class="notice">Vous parlez à une intelligence artificielle. Cet entretien est un prototype, non utilisé pour une décision de recrutement. Aucune donnée audio n'est conservée après transcription.</div>
+      </div>
+      <div id="error" class="error hidden" role="alert"></div>
+      <div class="voice-bar">
+        <button id="mic" class="mic" type="button" disabled>Commencer à parler</button>
+        <span id="rec-indicator" class="rec-indicator hidden" aria-live="polite">● Enregistrement</span>
+      </div>
+      <form id="form">
+        <textarea id="answer" rows="2" placeholder="Transcription ou réponse écrite…" disabled maxlength="1500" aria-label="Réponse candidat"></textarea>
+        <button id="send" disabled>Envoyer ↗</button>
+      </form>
+      <div class="footer-actions">
+        <button id="finish" class="secondary" disabled>Terminer & rapport</button>
+        <button id="reset" class="secondary">Réinitialiser</button>
+      </div>
+    </section>
+  </div>
+
+  <section id="report" class="report hidden">
+    <div class="report-head">
+      <div>
+        <p class="eyebrow">SYNTHÈSE FACTUELLE</p>
+        <h2>Compte rendu de l'entretien</h2>
+      </div>
+      <button id="download" class="secondary">Exporter .json</button>
+    </div>
+    <p>Aucun score et aucune recommandation de décision. Le contenu provient uniquement des déclarations du candidat.</p>
+    <pre id="report-content" class="report-json"></pre>
+  </section>
+
+  <footer>POC technique · Données en mémoire uniquement · Audio temporaire effacé après transcription · Ne pas utiliser pour des recrutements réels.</footer>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
