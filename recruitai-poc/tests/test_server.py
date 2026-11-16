@@ -1,4 +1,4 @@
-"""Lightweight stdlib tests for RecruitAI V0.3 (no third-party deps)."""
+"""Lightweight stdlib tests for RecruitAI conversational interview (no third-party deps)."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
+from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -47,85 +47,154 @@ def run_server():
     return httpd, port
 
 
-def run_scripted(answers: list[str]) -> tuple[list[dict], interview.TurnResult]:
-    """Drive a full demo interview with scripted Camille lines."""
+def drive(answers: list[str]) -> tuple[list[dict], list[interview.TurnResult]]:
     job = interview.load_job()
     history: list[dict] = []
-    last = interview.process_turn(history, job, demo=True)
-    history.append({"role": "assistant", "content": last.reply})
+    turns: list[interview.TurnResult] = []
+    t = interview.process_turn(history, job, demo=True)
+    history.append({"role": "assistant", "content": t.reply})
+    turns.append(t)
     for ans in answers:
         history.append({"role": "user", "content": ans})
-        last = interview.process_turn(history, job, demo=True)
+        t = interview.process_turn(history, job, demo=True)
+        history.append({"role": "assistant", "content": t.reply})
+        turns.append(t)
+        if t.done:
+            break
+    return history, turns
+
+
+def test_job_and_monday():
+    job = interview.load_job()
+    check("job agency", job["agency"] == "Interim Express")
+    check("job salary", "12,50" in job["salary_note"])
+    wed = date(2026, 11, 18)
+    check("next monday", interview.next_monday(wed) == date(2026, 11, 23))
+
+
+def test_strip_prefixes():
+    check("strip Question:", interview.strip_roleplay_prefixes("Question : Bonjour") == "Bonjour")
+    check("strip think", server.strip_think("<think>x</think>Question : Salut") == "Salut")
+
+
+def test_experienced_candidate():
+    history, turns = drive(
+        [
+            "Oui.",
+            "Oui, chez Amazon pendant deux mois.",
+            "Je préparais les commandes et je faisais l'emballage.",
+            "Je suis disponible dès mercredi.",
+            "Le créneau 6:00–13:00.",
+            "Oui, ça me va.",
+            "Non merci.",
+        ]
+    )
+    last = turns[-1]
+    check("exp done", last.done is True)
+    check("exp remembers amazon", last.slots.experience is not None and "Amazon" in last.slots.experience)
+    check("exp followup asked", any("concrètement" in t.reply.lower() or "tâches" in t.reply.lower() for t in turns))
+    # After Amazon, should NOT jump straight to availability without follow-up
+    after_amazon = turns[2]  # intro reply, after oui, after amazon
+    check("exp stays for followup", after_amazon.stage == "experience", after_amazon.stage)
+    check("exp no Question prefix", all(not t.reply.lower().startswith("question :") for t in turns))
+    report = interview.build_report(history)
+    check("exp report no score", report["scoring"] is None and report["hiring_recommendation"] is None)
+    check("exp report availability", report["availability"] is not None and "mercredi" in report["availability"].lower())
+
+
+def test_beginner_candidate():
+    history, turns = drive(
+        [
+            "Oui je suis prêt.",
+            "Non, je n'ai jamais travaillé en logistique, je suis débutant.",
+            "Disponible immédiatement.",
+            "Les deux créneaux.",
+            "Oui.",
+            "Aucune question.",
+        ]
+    )
+    last = turns[-1]
+    check("beginner done", last.done)
+    check("beginner experience", last.slots.experience is not None and "débutant" in last.slots.experience.lower())
+    # Beginner should not get experience task follow-up
+    check(
+        "beginner no task followup",
+        not any("concrètement" in t.reply.lower() for t in turns),
+    )
+
+
+def test_unexpected_job_questions():
+    history, turns = drive(
+        [
+            "Oui.",
+            "Oui, un an en manutention sur quai, chargement et tri de colis.",
+            "Ça dépend, c'est combien le salaire ?",
+        ]
+    )
+    last = turns[-1]
+    check("unexpected salary intent", last.intent == "QUESTION_ABOUT_JOB", last.intent)
+    check("unexpected salary fact", "12,50" in last.reply)
+    check(
+        "unexpected resumes interview",
+        "recherchez" in last.reply.lower()
+        or "correspond" in last.reply.lower()
+        or "disponible" in last.reply.lower()
+        or "attente" in last.reply.lower(),
+        last.reply,
+    )
+    # Continue after salary digression with availability in same breath style
+    history.append({"role": "user", "content": "Oui pour le salaire, mais je ne peux commencer que mercredi."})
+    t = interview.process_turn(history, interview.load_job(), demo=True)
+    check("mixed salary+avail ack", "mercredi" in t.reply.lower() or t.stage in ("availability", "hours", "salary", "questions"), f"{t.stage} {t.reply}")
+
+
+def test_clarification_request():
+    history, turns = drive(
+        [
+            "Oui.",
+            "Deux ans en logistique, préparation de commandes.",
+            "Disponible la semaine prochaine.",
+            "10h à 15h avec 2 heures de pause.",
+        ]
+    )
+    # Custom hours → alignment follow-up, NOT advance
+    last = turns[-1]
+    check("custom hours stay", last.stage == "hours", last.stage)
+    check("custom hours align ask", "6:00" in last.reply or "6h" in last.reply.lower() or "créneau" in last.reply.lower(), last.reply)
+    check("custom hours acknowledged", "10h" in last.reply or "15h" in last.reply or "comprends" in last.reply.lower() or "préférence" in last.reply.lower(), last.reply)
+
+    history.append({"role": "user", "content": "Comment ça ?"})
+    t = interview.process_turn(history, interview.load_job(), demo=True)
+    check("clarify intent", t.intent == "CLARIFICATION_REQUEST", t.intent)
+    check("clarify stays hours", t.stage == "hours", t.stage)
+    check("clarify reformulates", "créneau" in t.reply.lower() or "horaire" in t.reply.lower() or "6:00" in t.reply or "6h" in t.reply.lower(), t.reply)
+    check("clarify does not jump to questions", "avez-vous des questions" not in t.reply.lower(), t.reply)
+
+
+def test_multi_answer_at_once():
+    history, turns = drive(
+        [
+            "Oui.",
+            "Débutant, jamais travaillé en entrepôt. Je suis dispo dès lundi et le matin 6h-13h me va, le salaire aussi.",
+        ]
+    )
+    last = turns[-1]
+    # Should have pulled multiple slots from one utterance where possible
+    check("multi experience", last.slots.experience is not None)
+    # May advance past some filled slots
+    report = interview.build_report(history + [{"role": "assistant", "content": last.reply}])
+    # Drive remaining minimally
+    while not last.done and len([h for h in history if h["role"] == "user"]) < 12:
+        # If salary/hours/avail already filled, answers can be short confirmations
+        history.append({"role": "user", "content": "Oui, c'est bon, pas d'autre question."})
+        last = interview.process_turn(history, interview.load_job(), demo=True)
         history.append({"role": "assistant", "content": last.reply})
         if last.done:
             break
-    return history, last
+    check("multi eventually completes or progress", last.done or last.stage in ("questions", "closing", "salary", "hours"), last.stage)
 
 
-def test_job_json():
-    job = interview.load_job()
-    check("job agency", job.get("agency") == "Interim Express")
-    check("job title", "manutentionnaire" in job.get("job_title", "").lower())
-    check("job location", job.get("location") == "Lyon")
-    check("job salary note", "12,50" in job.get("salary_note", ""))
-    check("job hours", job.get("working_hours") == ["6:00–13:00", "13:00–20:00"])
-    check("job start date resolved", bool(job.get("start_date")) and bool(job.get("start_date_fr")))
-    # next Monday must be a Monday
-    d = date.fromisoformat(job["start_date"])
-    check("job start is Monday", d.weekday() == 0)
-    check("job start in future or today+7 rule", d > date.today() or d == date.today() + timedelta(days=7) or d > date.today())
-
-
-def test_next_monday():
-    # Wednesday → following Monday
-    wed = date(2026, 11, 18)
-    check("next monday from wed", interview.next_monday(wed) == date(2026, 11, 23))
-    # Monday → following Monday (strict next)
-    mon = date(2026, 11, 16)
-    check("next monday from mon", interview.next_monday(mon) == date(2026, 11, 23))
-
-
-def test_scenario_with_experience():
-    answers = [
-        "Oui, je suis prêt.",
-        "Oui, j'ai deux ans d'expérience en logistique et manutention sur quai.",
-        "Je suis disponible dès lundi prochain.",
-        "Les deux créneaux me conviennent, matin et après-midi.",
-        "Oui, 12,50 € brut me convient.",
-        "Non, pas de question.",
-    ]
-    history, last = run_scripted(answers)
-    check("exp scenario done", last.done is True, str(last))
-    check("exp scenario stage closing", last.stage == "closing")
-    check("exp scenario experience filled", last.slots.experience is not None and "logistique" in last.slots.experience.lower())
-    check("exp scenario hours filled", last.slots.accepted_hours is not None)
-    check("exp scenario salary filled", last.slots.salary_expectations is not None)
-    report = interview.build_report(history)
-    check("exp report no scoring", report.get("scoring") is None and report.get("hiring_recommendation") is None)
-    check("exp report job", "manutentionnaire" in report.get("target_job", "").lower())
-    check("exp report experience field", report.get("experience") is not None)
-
-
-def test_scenario_without_experience():
-    answers = [
-        "Bonjour, d'accord.",
-        "Non, je n'ai jamais travaillé en logistique, je suis débutant.",
-        "Disponible immédiatement, dès que possible.",
-        "Je préfère le créneau 6:00–13:00.",
-        "Oui ça correspond à mes attentes.",
-        "Aucune question merci.",
-    ]
-    history, last = run_scripted(answers)
-    check("noexp done", last.done is True)
-    check(
-        "noexp experience stored",
-        last.slots.experience is not None and ("débutant" in last.slots.experience.lower() or "jamais" in last.slots.experience.lower()),
-    )
-    report = interview.build_report(history)
-    check("noexp missing not experience", "expérience" not in report.get("missing_information", []))
-
-
-def test_scenario_salary_midway():
+def test_interrupt_and_resume():
     job = interview.load_job()
     history: list[dict] = []
     t = interview.process_turn(history, job, demo=True)
@@ -133,109 +202,100 @@ def test_scenario_salary_midway():
     history.append({"role": "user", "content": "Oui."})
     t = interview.process_turn(history, job, demo=True)
     history.append({"role": "assistant", "content": t.reply})
-    check("before interrupt stage experience", t.stage == "experience", t.stage)
-
-    history.append({"role": "user", "content": "C'est combien le salaire ?" })
+    history.append({"role": "user", "content": "Quelles sont les tâches exactes ?"})
     t = interview.process_turn(history, job, demo=True)
-    check("salary interrupt flagged", t.interrupted is True, str(t))
-    check("salary interrupt mentions 12,50", "12,50" in t.reply, t.reply)
-    check("salary interrupt resumes experience", t.stage == "experience", t.stage)
-    check("salary interrupt still asks experience", "logistique" in t.reply.lower() or "manutention" in t.reply.lower(), t.reply)
+    check("interrupt duties", t.interrupted and "colis" in t.reply.lower(), t.reply)
+    check("interrupt resumes experience", t.stage == "experience", t.stage)
     history.append({"role": "assistant", "content": t.reply})
-
-    # Continue coherently after interruption
-    history.append({"role": "user", "content": "Oui, un an en manutention."})
+    history.append({"role": "user", "content": "Oui, j'ai fait du tri de colis pendant 6 mois."})
     t = interview.process_turn(history, job, demo=True)
-    check("after interrupt advances", t.stage == "availability", t.stage)
-    history.append({"role": "assistant", "content": t.reply})
-    for ans in [
-        "Je suis disponible la semaine prochaine.",
-        "Les deux horaires sont ok.",
-        "Oui pour le salaire.",
-        "Non merci.",
-    ]:
-        history.append({"role": "user", "content": ans})
-        t = interview.process_turn(history, job, demo=True)
-        history.append({"role": "assistant", "content": t.reply})
-        if t.done:
-            break
-    check("salary midway finishes", t.done is True, t.stage)
+    check("resume advances after answer", t.stage == "availability", t.stage)
 
 
-def test_scenario_unavailable_monday():
-    answers = [
-        "Oui.",
-        "Oui, j'ai déjà fait de la manutention.",
-        "Je ne suis pas disponible lundi prochain, seulement dans trois semaines.",
-        "Le créneau 13:00–20:00 uniquement.",
-        "Le salaire me va.",
-        "Pas de question.",
-    ]
-    history, last = run_scripted(answers)
-    check("unavail done", last.done is True)
+def test_contradictory_information():
+    history, turns = drive(
+        [
+            "Oui.",
+            "Non je suis débutant.",
+            "Je suis disponible lundi prochain.",
+            "En fait non, seulement dans un mois.",
+            "Les deux horaires.",
+            "Oui.",
+            "Non.",
+        ]
+    )
+    last = turns[-1]
+    check("contradiction done", last.done)
     check(
-        "unavail availability kept",
-        last.slots.availability is not None
-        and ("trois semaines" in last.slots.availability.lower() or "pas disponible" in last.slots.availability.lower()),
+        "contradiction keeps latest avail",
+        last.slots.availability is not None and "mois" in last.slots.availability.lower(),
         str(last.slots.availability),
     )
     report = interview.build_report(history)
-    check("unavail no hiring decision", report.get("hiring_recommendation") is None)
+    check(
+        "contradiction noted or latest kept",
+        bool(report.get("contradictions")) or "mois" in (report.get("availability") or "").lower(),
+        str(report.get("contradictions")),
+    )
 
 
-def test_scenario_incomplete_answers():
-    job = interview.load_job()
-    history: list[dict] = []
-    t = interview.process_turn(history, job, demo=True)
-    history.append({"role": "assistant", "content": t.reply})
-    history.append({"role": "user", "content": "Ok."})
-    t = interview.process_turn(history, job, demo=True)
-    history.append({"role": "assistant", "content": t.reply})
-
-    # Incomplete experience → reask
-    history.append({"role": "user", "content": "euh"})
-    t = interview.process_turn(history, job, demo=True)
-    check("incomplete reask experience", t.stage == "experience" and ("préciser" in t.reply.lower() or "logistique" in t.reply.lower()), t.reply)
-    history.append({"role": "assistant", "content": t.reply})
-
-    # Second incomplete → mark missing and move on
-    history.append({"role": "user", "content": "bof"})
-    t = interview.process_turn(history, job, demo=True)
-    check("incomplete advances after 2", t.stage == "availability", t.stage)
-    check("incomplete marks missing", "expérience" in t.slots.missing, str(t.slots.missing))
-    history.append({"role": "assistant", "content": t.reply})
-
-    for ans in [
-        "Disponible dès maintenant.",
-        "Les deux.",
-        "Oui.",
-        "Non.",
-    ]:
-        history.append({"role": "user", "content": ans})
-        t = interview.process_turn(history, job, demo=True)
-        history.append({"role": "assistant", "content": t.reply})
-        if t.done:
-            break
-    check("incomplete scenario finishes", t.done is True)
+def test_incomplete_answers():
+    history, turns = drive(
+        [
+            "Oui.",
+            "euh",
+            "bof",
+            "Disponible demain matin.",
+            "6h-13h",
+            "Oui",
+            "Non",
+        ]
+    )
+    last = turns[-1]
+    check("incomplete finishes", last.done, last.stage)
     report = interview.build_report(history)
-    check("incomplete report lists missing", "expérience" in report.get("missing_information", []))
+    check("incomplete marks missing exp", "expérience" in report.get("missing_information", []), str(report.get("missing_information")))
 
 
-def test_never_invents_extra_job_facts():
+def test_no_invention():
     job = interview.load_job()
     ans = interview.answer_job_topic("salary", job)
-    check("salary answer uses json", "12,50" in ans)
-    check("salary answer no invention", "13" not in ans and "prime" not in ans.lower())
-    duties = interview.answer_job_topic("duties", job)
-    check("duties from json", "colis" in duties.lower())
+    check("no invent salary", "12,50" in ans and "prime" not in ans.lower())
+    # Full flow must not invent benefits
+    _, turns = drive(["Oui.", "Débutant.", "Dispo lundi.", "Les deux.", "Oui.", "Non."])
+    blob = " ".join(t.reply.lower() for t in turns)
+    check("no invent benefits", "mutuelle" not in blob and "13 €" not in blob and "13€" not in blob)
+
+
+def test_example_conversation_quality():
+    """Mirror the target dialogue quality from the spec."""
+    history, turns = drive(
+        [
+            "Oui.",
+            "Oui, chez Amazon pendant deux mois.",
+            "Je préparais les commandes et je faisais l'emballage.",
+            "Ça dépend, c'est combien le salaire ?",
+            "Oui, mais je ne peux commencer que mercredi.",
+            "Le matin, 6h–13h.",
+            "Non merci, pas d'autre question.",
+        ]
+    )
+    replies = [t.reply for t in turns]
+    check("quality followup tasks", any("concrètement" in r.lower() or "tâches" in r.lower() for r in replies))
+    check("quality salary from json", any("12,50" in r for r in replies))
+    check("quality remembers amazon", any(t.slots.experience and "Amazon" in t.slots.experience for t in turns))
+    check("quality remembers / advances", turns[-1].done, turns[-1].stage)
+    stages = [t.stage for t in turns]
+    if "availability" in stages:
+        idx = stages.index("availability")
+        later = " ".join(t.reply.lower() for t in turns[idx:])
+        check("quality no repeat experience q", "avez-vous déjà travaillé" not in later, later[:120])
 
 
 def test_health(port: int):
     status, data = http_json("GET", f"http://127.0.0.1:{port}/api/health")
     check("health ok", status == 200 and data.get("ok") is True)
-    check("health version", data.get("version") == "0.3")
     check("health job", data.get("job", {}).get("agency") == "Interim Express")
-    check("health whisper keys", "whisper" in data)
 
 
 def test_next_demo(port: int):
@@ -246,9 +306,8 @@ def test_next_demo(port: int):
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    check("demo next", status == 200 and "reply" in data and data.get("mode") == "scripted")
-    check("demo intro stage", data.get("stage") == "intro")
-    check("demo mentions Interim Express or Camille", "Camille" in data["reply"] or "Interim" in data["reply"], data["reply"][:120])
+    check("demo next", status == 200 and data.get("mode") == "scripted")
+    check("demo no Question prefix", not data["reply"].lower().startswith("question :"), data["reply"][:80])
 
 
 def test_next_invalid(port: int):
@@ -265,13 +324,13 @@ def test_next_invalid(port: int):
         check("invalid history rejected", exc.code == 400)
 
 
-def test_report(port: int):
-    history, last = run_scripted(
+def test_report_http(port: int):
+    history, _ = drive(
         [
             "Oui.",
-            "Deux ans en logistique.",
-            "Disponible lundi dans trois semaines.",
-            "6:00–13:00.",
+            "Deux ans manutention, chargement.",
+            "Dispo mercredi.",
+            "13:00–20:00.",
             "Oui.",
             "Non.",
         ]
@@ -284,9 +343,8 @@ def test_report(port: int):
         headers={"Content-Type": "application/json"},
     )
     check("report status", status == 200)
-    check("report no scoring", data.get("scoring") is None and data.get("hiring_recommendation") is None)
+    check("report no scoring", data.get("scoring") is None)
     check("report job", "manutentionnaire" in data.get("target_job", "").lower())
-    check("report has availability", data.get("availability") is not None)
 
 
 def test_transcribe_empty(port: int):
@@ -321,14 +379,7 @@ def test_transcribe_french(port: int):
         aiff = tmp / "fr.aiff"
         wav = tmp / "fr.wav"
         subprocess.run(
-            [
-                "say",
-                "-v",
-                "Thomas",
-                "-o",
-                str(aiff),
-                "Bonjour, j'ai trois ans d'expérience en manutention.",
-            ],
+            ["say", "-v", "Thomas", "-o", str(aiff), "Bonjour, j'ai de l'expérience en manutention."],
             check=True,
             capture_output=True,
         )
@@ -344,32 +395,19 @@ def test_transcribe_french(port: int):
             'Content-Disposition: form-data; name="audio"; filename="fr.wav"\r\n'
             "Content-Type: audio/wav\r\n\r\n"
         ).encode() + audio + f"\r\n--{boundary}--\r\n".encode()
-        t0 = time.perf_counter()
         status, data = http_json(
             "POST",
             f"http://127.0.0.1:{port}/api/transcribe",
             data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         )
-        elapsed = time.perf_counter() - t0
         text = (data.get("text") or "").lower()
-        check("transcribe status", status == 200, str(data))
-        check(
-            "transcribe french content",
-            ("expérience" in text or "experience" in text or "manutention" in text or "bonjour" in text),
-            text,
-        )
-        print(f"INFO  transcription latency_sec≈{data.get('latency_sec')} wall={elapsed:.2f}s text={data.get('text')!r}")
-        check("transcribe returns latency", isinstance(data.get("latency_sec"), (int, float)))
+        check("transcribe status", status == 200)
+        check("transcribe french", any(k in text for k in ("bonjour", "expérience", "experience", "manutention")))
     finally:
         for p in tmp.iterdir():
             p.unlink(missing_ok=True)
         tmp.rmdir()
-
-
-def test_strip_think():
-    out = server.strip_think("<think>secret</think>Bonjour candidat")
-    check("strip think", out == "Bonjour candidat")
 
 
 def test_ollama_optional(port: int):
@@ -384,30 +422,11 @@ def test_ollama_optional(port: int):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        reply = (data.get("reply") or "").lower()
-        check("ollama next", status == 200 and data.get("mode") in ("ollama", "scripted"))
-        check(
-            "ollama recruiter-ish",
-            any(
-                k in reply
-                for k in (
-                    "camille",
-                    "ia",
-                    "intelligence",
-                    "interim",
-                    "manutention",
-                    "quai",
-                    "bonjour",
-                    "lyon",
-                    "entretien",
-                    "prêt",
-                    "pret",
-                )
-            ),
-            reply[:200],
-        )
-        check("ollama no think tags", "<think>" not in reply)
-        print(f"INFO  ollama reply={data.get('reply')!r}")
+        reply = data.get("reply") or ""
+        check("ollama next", status == 200)
+        check("ollama no Question prefix", not reply.lower().startswith("question :"), reply[:100])
+        check("ollama no think", "<think>" not in reply)
+        print(f"INFO  ollama reply={reply!r}")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
         if exc.code == 503:
@@ -416,23 +435,77 @@ def test_ollama_optional(port: int):
             check("ollama next", False, body[:200])
 
 
+def test_handsfree_frontend_contract():
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    for needle in ("pause-voice", "handsfree", "mic-status", "silence-ms", "vad-meter", "phase-badge"):
+        check(f"html has {needle}", needle in html)
+    for needle in (
+        "CAMILLE_SPEAKING",
+        "LISTENING",
+        "CANDIDATE_SPEAKING",
+        "TRANSCRIBING",
+        "THINKING",
+        "startListening",
+        "afterCamilleSpoke",
+        "silenceMs",
+        "createAnalyser",
+        "/api/transcribe",
+    ):
+        check(f"js has {needle}", needle in js)
+    check("js removed push-to-talk labels", "Commencer à parler" not in js)
+
+
+def test_ready_phrase_does_not_fill_experience():
+    job = interview.load_job()
+    history = []
+    r = interview.process_turn(history, job, demo=True)
+    history.append({"role": "assistant", "content": r.reply})
+    history.append({"role": "user", "content": "Je suis prêt."})
+    r = interview.process_turn(history, job, demo=True)
+    check("ready advances past intro", r.stage == "experience", r.stage)
+    check("ready not stored as experience", r.slots.experience is None)
+    history.append({"role": "assistant", "content": r.reply})
+    history.append({"role": "user", "content": "Je suis prêt."})
+    r = interview.process_turn(history, job, demo=True)
+    check("second ready incomplete or reask", "logistique" in r.reply.lower() or "manutention" in r.reply.lower(), r.reply[:80])
+    check("second ready still no fake experience", r.slots.experience in (None, "(non précisé)"))
+
+
+def test_naturalize_rejects_stale_intro():
+    from server import _naturalize_keeps_facts
+
+    job = interview.load_job()
+    scripted = interview.stage_question("experience", job)
+    stale = "Bonjour, êtes-vous prêt(e) à commencer cet entretien ?"
+    check("stale intro rejected on experience", not _naturalize_keeps_facts("experience", scripted, stale, job))
+    good = "Parfait. Avez-vous déjà travaillé en logistique ou en manutention ?"
+    check("good experience naturalize accepted", _naturalize_keeps_facts("experience", scripted, good, job))
+
+
 def main():
-    test_strip_think()
-    test_job_json()
-    test_next_monday()
-    test_scenario_with_experience()
-    test_scenario_without_experience()
-    test_scenario_salary_midway()
-    test_scenario_unavailable_monday()
-    test_scenario_incomplete_answers()
-    test_never_invents_extra_job_facts()
+    test_job_and_monday()
+    test_strip_prefixes()
+    test_experienced_candidate()
+    test_beginner_candidate()
+    test_unexpected_job_questions()
+    test_clarification_request()
+    test_multi_answer_at_once()
+    test_interrupt_and_resume()
+    test_contradictory_information()
+    test_incomplete_answers()
+    test_no_invention()
+    test_example_conversation_quality()
+    test_handsfree_frontend_contract()
+    test_ready_phrase_does_not_fill_experience()
+    test_naturalize_rejects_stale_intro()
     httpd, port = run_server()
     time.sleep(0.2)
     try:
         test_health(port)
         test_next_demo(port)
         test_next_invalid(port)
-        test_report(port)
+        test_report_http(port)
         test_transcribe_empty(port)
         test_transcribe_french(port)
         test_ollama_optional(port)

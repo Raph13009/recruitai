@@ -38,6 +38,7 @@ JOB = interview.load_job()
 def strip_think(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
     text = re.sub(r"<\|.*?\|>", "", text)
+    text = interview.strip_roleplay_prefixes(text)
     return text.strip()
 
 
@@ -159,8 +160,18 @@ def run_whisper(wav_path: pathlib.Path) -> tuple[str, float]:
 
 
 def _naturalize_keeps_facts(stage: str, scripted: str, reply: str, job: dict) -> bool:
-    """Reject Qwen output that drops required facts or invents amounts."""
+    """Reject Qwen output that drops required facts, invents amounts, or repeats a stale intro."""
     low = reply.lower()
+    if low.startswith(("question :", "réponse :", "reponse :")):
+        return False
+    # Tiny models often ignore the new scripted line and re-ask the intro readiness question.
+    stale_intro = (
+        "commencer cet entretien" in low
+        or "commencer l'entretien" in low
+        or "commencer l’entretien" in low
+    )
+    if stage != "intro" and stale_intro:
+        return False
     if stage == "intro":
         if "camille" not in low:
             return False
@@ -168,20 +179,35 @@ def _naturalize_keeps_facts(stage: str, scripted: str, reply: str, job: dict) ->
             return False
         if "lyon" not in low and job["location"].lower() not in low:
             return False
-    if stage == "salary" or "12,50" in scripted:
-        if "12,50" in scripted and "12,50" not in reply and "12.50" not in reply:
+        if job["job_title"].split("/")[0].strip().lower().split()[0] not in low and "quai" not in low and "manutention" not in low:
             return False
-    if stage == "hours":
-        if "6:00" not in reply and "6h" not in low:
+    stage_needles = {
+        "experience": ("logistique", "manutention", "expérience", "experience", "tâches", "taches", "débutant", "debutant"),
+        "availability": ("disponible", "disponibilité", "disponibilite", "à partir", "a partir", "début", "debut"),
+        "hours": ("horaire", "créneau", "creneau", "6:00", "6h", "13:00", "13h", "20:00", "20h"),
+        "salary": ("salaire", "rémunér", "remuner", "12,50", "12.50", "brut"),
+        "questions": ("question",),
+        "closing": ("merci", "recruteur", "clôtur", "clotur", "au revoir"),
+    }
+    needles = stage_needles.get(stage)
+    if needles and not any(n in low for n in needles):
+        return False
+    if "?" in scripted and "?" not in reply and stage not in ("closing",):
+        return False
+    # Only enforce salary digits when the scripted line itself states them
+    if "12,50" in scripted and "12,50" not in reply and "12.50" not in reply:
+        return False
+    # Official slots only required when script presents both windows
+    if "6:00" in scripted or "6h" in scripted.lower():
+        if "6:00" not in reply and "6h" not in low and "6 h" not in low:
             return False
     if re.search(r"\d+[.,]\d+\s*€", reply) and "12,50" not in reply and "12.50" not in reply:
-        if "12,50" in scripted or "12.50" in scripted:
-            return False
+        return False
     return True
 
 
 def call_ollama_naturalize(history: list, stage: str, scripted: str, job: dict) -> str:
-    """Ask Qwen only to rephrase the state-machine line; fall back if off-topic."""
+    """Ask Qwen only to rephrase the composed line; fall back if off-topic."""
     msgs = interview.naturalize_prompt(stage, scripted, job, history)
     payload = json.dumps(
         {
@@ -189,7 +215,7 @@ def call_ollama_naturalize(history: list, stage: str, scripted: str, job: dict) 
             "messages": msgs,
             "stream": False,
             "think": False,
-            "options": {"num_ctx": 2048, "num_predict": 160, "temperature": 0.2},
+            "options": {"num_ctx": 2048, "num_predict": 180, "temperature": 0.25},
         }
     ).encode()
     req = urllib.request.Request(
@@ -320,6 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                 "done": turn.done,
                 "mode": mode,
                 "stage": turn.stage,
+                "intent": turn.intent,
                 "interrupted": turn.interrupted,
                 "slots": turn.slots.as_dict(),
                 "progress": {

@@ -36,6 +36,8 @@ h1 em{font-style:normal;color:#5a6fb5}
 .body-avatar{position:absolute;bottom:0;left:4px;width:192px;height:135px;background:#384c80;border-radius:70px 70px 0 0;z-index:1}
 .name{font-weight:800;font-size:18px;margin-top:5px}
 .state{font-size:13px;color:#6f7891;min-height:1.4em}
+.phase-line{font-size:11px;color:#8b97aa;margin:4px 0 0}
+.phase-line code{font-size:10px;background:#e8edf5;padding:2px 6px;border-radius:6px}
 .progress-wrap{margin:14px auto 0;max-width:260px;text-align:left}
 .progress-label{display:flex;justify-content:space-between;font-size:11px;color:#6f7891;margin-bottom:6px}
 .progress-bar{height:8px;background:#e4e9f2;border-radius:99px;overflow:hidden}
@@ -50,6 +52,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .chat{display:flex;flex-direction:column;min-height:530px}
 .chat-head{padding:19px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eef0f4;gap:12px}
 .chat-head p{font-size:12px;color:#8190a3;margin:5px 0 0}
+.chat-toggles{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .demo{font-size:11px;color:#6a7891;display:flex;align-items:center;gap:5px}
 .messages{padding:21px;flex:1;overflow-y:auto;max-height:320px;min-height:240px;display:flex;flex-direction:column;gap:14px}
 .notice{font-size:12px;background:#f0f3fa;color:#60718d;border-radius:10px;padding:13px;line-height:1.5}
@@ -58,8 +61,18 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .user{align-self:flex-end;background:#e0e9ff}
 .msg small{display:block;font-size:10px;color:#7f8ba0;margin-bottom:4px}
 .error{margin:0 12px;padding:10px 12px;border-radius:10px;background:#fef3f2;color:var(--danger);font-size:12px;line-height:1.45}
-.voice-bar{display:flex;align-items:center;gap:12px;padding:0 12px 8px}
-.rec-indicator{font-size:12px;color:var(--danger);font-weight:700;animation:blink 1s infinite}
+.voice-panel{padding:8px 12px 4px;display:grid;gap:8px}
+.mic-status{display:flex;align-items:center;gap:8px;font-size:12px;color:#5b6a84;background:#f4f6fa;border-radius:10px;padding:10px 12px}
+.mic-status .mic-dot{width:10px;height:10px;border-radius:50%;background:#98a0ae;flex-shrink:0}
+.mic-status.live .mic-dot{background:#12b76a;box-shadow:0 0 0 4px #12b76a22;animation:pulse 1.2s infinite}
+.mic-status.paused .mic-dot{background:#f79009}
+@keyframes pulse{50%{transform:scale(1.15)}}
+.vad-wrap{padding:0 2px}
+.vad-track{height:6px;background:#e4e9f2;border-radius:99px;overflow:hidden}
+.vad-track i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5a6fb5,#12b76a);transition:width .08s linear}
+.silence-label{font-size:11px;color:#6a7891;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.silence-label select{border:1px solid #dce2ec;border-radius:8px;padding:6px 8px;font:inherit;font-size:12px;background:#fff}
+.rec-indicator{font-size:12px;color:var(--danger);font-weight:700;margin-left:auto;animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.35}}
 form{border-top:1px solid #edf0f4;display:flex;padding:12px;gap:8px}
 textarea{resize:vertical;flex:1;border:1px solid #dce2ec;border-radius:10px;padding:12px;font:inherit;font-size:13px;min-width:0}

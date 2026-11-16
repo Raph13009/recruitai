@@ -1,4 +1,4 @@
-# Setup — RecruitAI V0.2
+# Setup — RecruitAI V0.4
 
 ## Prerequisites
 - macOS (Apple Silicon preferred; Metal used by whisper.cpp when available)
@@ -48,6 +48,8 @@ python3 tests/test_server.py
 ```
 
 ## Manual checks remaining
-- Browser microphone permission dialog
-- Full push-to-talk in Safari/Chrome with real speech
-- Listening to Camille via browser TTS voices available on the machine
+- Browser microphone permission dialog (required once for hands-free)
+- Full hands-free loop: Camille speaks → you answer → silence end → Whisper → Qwen → Camille speaks again
+- Pause / resume mid-interview
+- Text fallback while hands-free is active
+- Browser TTS voices available on the machine (offline not guaranteed)

@@ -1,15 +1,16 @@
-# RecruitAI POC — local structured AI interview (V0.3)
+# RecruitAI POC — local structured AI interview (V0.4)
 
 A deliberately small **technical proof of concept** for French temporary staffing agencies. Camille conducts a structured ~5-minute interview for a fictional warehouse role. Runs on a Mac with 8 GB RAM. No Node dependencies, no Python packages for the server. **Never use or commit real candidate data.**
 
-## Features (V0.3)
-- French interview led by an **application state machine** (not free-form chat)
+## Features (V0.4)
+- French **conversational** interview: intent detection + conditional stage progression
 - Demo job: **Interim Express** — Agent de quai / manutentionnaire, Lyon (`data/demo_job.json`)
-- Local **Ollama Qwen3 0.6B** used only to naturalize scripted lines
-- Scripted fallbacks when Qwen digresses or is unavailable
-- **Push-to-talk** microphone capture in the browser
+- Local **Ollama Qwen3 0.6B** naturalizes composed replies (acknowledgments, follow-ups)
+- Deterministic fallbacks when Qwen digresses or is unavailable
+- Handles clarification, job questions, incomplete / multi-slot answers, contradictions
+- **Hands-free voice loop** (Web Audio VAD + silence end → whisper → auto-send); pause/resume
 - Local speech-to-text via **whisper.cpp** (`ggml-tiny`)
-- Text input fallback and editable transcription
+- Text input fallback always available
 - Offline scripted demo mode when Ollama is unavailable
 - Lightweight animated 2D interviewer (Camille)
 - Speech output via browser `speechSynthesis` (offline **not guaranteed**)
@@ -17,15 +18,18 @@ A deliberately small **technical proof of concept** for French temporary staffin
 - In-memory only; binds to `127.0.0.1` by default
 
 ## Interview flow
-1. Camille introduces herself as an AI and briefly explains the job
-2. Logistics / manual-handling experience
-3. Availability (start date resolved at runtime as next Monday)
-4. Working hours (`6:00–13:00` or `13:00–20:00`)
-5. Salary (€12.50 gross/hour — facts only from the JSON file)
-6. Candidate questions
-7. Closing (thanks, no hiring decision)
+Camille collects the same information but **does not advance blindly** after every message:
 
-Camille asks **one question at a time**, answers mid-interview questions about salary/hours/duties from the JSON file, then resumes the script.
+1. Intro as AI + brief job explanation
+2. Experience (relevant follow-up when useful)
+3. Availability
+4. Working hours (aligns custom hours to the two official slots)
+5. Salary expectations
+6. Candidate questions
+7. Closing (no hiring decision)
+
+Intents: `ANSWER`, `QUESTION_ABOUT_JOB`, `CLARIFICATION_REQUEST`, `INCOMPLETE_ANSWER`, `OFF_TOPIC`, `END_INTERVIEW`.  
+Job facts only from `data/demo_job.json`. No `Question :` / `Réponse :` prefixes.
 
 ## Quick start (macOS Apple Silicon)
 
@@ -48,7 +52,7 @@ Optional: check **Mode démo sans Ollama** to exercise the UI without a model.
 ## Architecture
 
 ```
-Browser (HTML/CSS/JS, MediaRecorder, speechSynthesis)
+Browser (HTML/CSS/JS, Web Audio VAD, MediaRecorder, speechSynthesis)
     → Python stdlib HTTP (127.0.0.1:8765)
         → interview.py state machine + data/demo_job.json
         → Ollama localhost (Qwen3 naturalization only)

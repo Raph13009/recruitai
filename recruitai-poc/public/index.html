@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RecruitAI — Prototype local V0.3</title>
+  <title>RecruitAI — Prototype local V0.4</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main>
   <header>
-    <div class="brand">◉ RecruitAI <small>POC local · V0.3</small></div>
-    <span class="pill">● Audio et texte traités en local</span>
+    <div class="brand">◉ RecruitAI <small>POC local · V0.4</small></div>
+    <span class="pill">● Conversation vocale locale mains libres</span>
   </header>
 
   <section class="intro">
     <div>
       <p class="eyebrow">ENTRETIEN DE DÉMONSTRATION</p>
       <h1>Un entretien plus humain.<br><em>Avec une IA transparente.</em></h1>
-      <p class="sub">Simulation Interim Express — Agent de quai / manutentionnaire à Lyon. Entretien structuré (~5 min). Entrée vocale locale (whisper.cpp) + texte. Aucun candidat réel, aucune sélection automatisée.</p>
+      <p class="sub">Simulation Interim Express — Agent de quai / manutentionnaire à Lyon. Après Camille, le micro écoute automatiquement (VAD + silence). Whisper local + texte en secours. Aucun candidat réel, aucune sélection automatisée.</p>
     </div>
   </section>
 
@@ -36,36 +36,58 @@
       </div>
       <div class="name">Camille · Assistante IA</div>
       <p id="state" class="state">Prête</p>
+      <p class="phase-line">État : <code id="phase-badge">IDLE</code></p>
       <div class="progress-wrap" aria-hidden="false">
         <div class="progress-label"><span>Progression</span><span id="progress-text">0 / 12</span></div>
         <div class="progress-bar"><i id="progress-fill"></i></div>
       </div>
       <div class="controls">
         <button id="start" class="primary">Commencer l'entretien</button>
+        <button id="pause-voice" class="secondary" type="button" disabled>Mettre en pause</button>
         <button id="mute" class="secondary" aria-pressed="false">Voix : activée</button>
         <button id="stop-speech" class="secondary" type="button">Stop voix</button>
       </div>
-      <p class="hint">Avatar 2D volontairement léger. La synthèse vocale utilise le navigateur (hors ligne non garantie). La reconnaissance vocale passe par whisper.cpp en local.</p>
+      <p class="hint">Avatar 2D léger. TTS navigateur (hors ligne non garantie). STT : whisper.cpp local. Le micro est coupé pendant que Camille parle pour éviter l'écho.</p>
     </section>
 
     <section class="chat">
       <div class="chat-head">
         <div>
           <b>Échange candidat</b>
-          <p>Parlez puis validez la transcription, ou tapez. Mode local uniquement.</p>
+          <p>Conversation mains libres, ou saisie texte. Mode local uniquement.</p>
         </div>
-        <label class="demo"><input id="demo" type="checkbox"> Mode démo sans Ollama</label>
+        <div class="chat-toggles">
+          <label class="demo"><input id="handsfree" type="checkbox" checked> Mains libres</label>
+          <label class="demo"><input id="demo" type="checkbox"> Mode démo sans Ollama</label>
+        </div>
       </div>
       <div id="messages" class="messages">
-        <div class="notice">Vous parlez à une intelligence artificielle. Cet entretien est un prototype, non utilisé pour une décision de recrutement. Aucune donnée audio n'est conservée après transcription.</div>
+        <div class="notice">Vous parlez à une intelligence artificielle. Mode conversation mains libres : Camille parle, puis le micro écoute automatiquement. Vous pouvez aussi taper. Aucune donnée audio n'est conservée après transcription.</div>
       </div>
       <div id="error" class="error hidden" role="alert"></div>
-      <div class="voice-bar">
-        <button id="mic" class="mic" type="button" disabled>Commencer à parler</button>
-        <span id="rec-indicator" class="rec-indicator hidden" aria-live="polite">● Enregistrement</span>
+
+      <div class="voice-panel">
+        <div id="mic-status" class="mic-status" aria-live="polite">
+          <span class="mic-dot" aria-hidden="true"></span>
+          <span id="mic-status-text">Micro inactif</span>
+          <span id="rec-indicator" class="rec-indicator hidden">● Parole</span>
+        </div>
+        <div class="vad-wrap" title="Niveau micro">
+          <div class="vad-track"><i id="vad-meter"></i></div>
+        </div>
+        <label class="silence-label">
+          Silence de fin
+          <select id="silence-ms" aria-label="Durée de silence pour fin de réponse">
+            <option value="1000">1,0 s</option>
+            <option value="1300" selected>1,3 s</option>
+            <option value="1500">1,5 s</option>
+            <option value="2000">2,0 s</option>
+          </select>
+        </label>
       </div>
+
       <form id="form">
-        <textarea id="answer" rows="2" placeholder="Transcription ou réponse écrite…" disabled maxlength="1500" aria-label="Réponse candidat"></textarea>
+        <textarea id="answer" rows="2" placeholder="Secours texte (ou transcription visible ici)…" disabled maxlength="1500" aria-label="Réponse candidat"></textarea>
         <button id="send" disabled>Envoyer ↗</button>
       </form>
       <div class="footer-actions">

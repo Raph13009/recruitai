@@ -1,58 +1,67 @@
-# Architecture — RecruitAI V0.3
+# Architecture — RecruitAI V0.4
 
 ## Components
 
 | Layer | Tech | Role |
 |-------|------|------|
-| UI | Static HTML/CSS/JS in `public/` | Interview UX, MediaRecorder push-to-talk, TTS, report download |
+| UI | Static HTML/CSS/JS in `public/` | Hands-free voice loop, Web Audio VAD, TTS, text fallback |
 | API | `server.py` (Python stdlib `ThreadingHTTPServer`) | Serves UI + JSON APIs on localhost |
 | Script | `interview.py` + `data/demo_job.json` | Stage machine, slot extraction, factual answers, report |
 | LLM | Ollama → `qwen3:0.6b` | Optional naturalization of scripted Camille lines |
 | STT | ffmpeg + whisper.cpp `ggml-tiny` | Local French transcription |
 | Storage | None on disk for interviews | History in browser memory; audio temps deleted after STT |
 
-## Interview control
+## Frontend voice state machine
+
+```
+IDLE → CAMILLE_SPEAKING → LISTENING → CANDIDATE_SPEAKING
+    → TRANSCRIBING → THINKING → CAMILLE_SPEAKING → …
+```
+
+Also: `PAUSED`, `ERROR`, `DONE`.
+
+- **LISTENING**: mic open, AnalyserNode RMS; MediaRecorder not yet writing utterance (or waiting for speech).
+- **CANDIDATE_SPEAKING**: MediaRecorder capturing; end when silence ≥ configured 1.0–2.0 s after min speech.
+- **CAMILLE_SPEAKING**: VAD loop stopped; mic not used for decisions (echo protection) + short cooldown before LISTENING.
+- Auto-submit transcript to `/api/next` (no manual confirm). Text form remains a fallback interrupt.
+
+## Interview control (backend)
 
 Stages (app-owned): `intro` → `experience` → `availability` → `hours` → `salary` → `questions` → `closing`.
 
-- The state machine picks the next scripted line and tracks filled slots.
-- Mid-interview questions about salary / hours / duties / contract / start date are answered **only** from `demo_job.json`, then the interview resumes.
-- Incomplete answers are re-asked once; still-empty fields are listed as missing in the report.
-- Qwen may rephrase the scripted line; if the reply is empty or off-topic, the predefined question is used.
-- Ollama is called with `think: false`; residual `<think>` tags are stripped.
+Progression is **conditional** on intent + whether the current slot is actually filled:
+
+| Intent | Behavior |
+|--------|----------|
+| `ANSWER` | Acknowledge, optional follow-up (max 1/stage), advance if sufficient |
+| `QUESTION_ABOUT_JOB` | Answer from `demo_job.json`, then resume |
+| `CLARIFICATION_REQUEST` | Reformulate previous question; do not advance |
+| `INCOMPLETE_ANSWER` | Re-ask (max 2); then mark missing and move on |
+| `OFF_TOPIC` | Redirect to current question |
+| `END_INTERVIEW` | Closing |
+
+Qwen naturalizes the composed reply; malformed / `Question :` output falls back. Ollama uses `think: false`.
 
 ## HTTP API
 
 ### `GET /api/health`
-Returns model name, version, job summary, and whisper/ffmpeg readiness.
+Model, version, job summary, whisper/ffmpeg readiness.
 
 ### `GET /api/job`
-Returns the demo job JSON with `start_date` / `start_date_fr` resolved at runtime.
+Demo job JSON with resolved start date.
 
 ### `POST /api/next`
-Body: `{ "history": [...], "demo": false }`  
-Returns next Camille `reply`, `stage`, `done`, `slots`, `interrupted`, and `progress`.
+`{ "history": [...], "demo": false }` → Camille reply + stage/progress.
 
 ### `POST /api/transcribe`
-`multipart/form-data` field `audio` (or JSON `audio_base64`).  
-Pipeline: save temp file → ffmpeg 16 kHz mono PCM WAV → `whisper-cli -l fr` → return `{ text, latency_sec }` → delete temp directory.
+Audio multipart → ffmpeg 16 kHz mono WAV → whisper-cli `-l fr` → `{ text, latency_sec }` → temp cleanup.
 
 ### `POST /api/report`
-Body: `{ "history": [...] }`  
-Returns factual JSON: experience, availability, accepted hours, salary expectations, candidate questions, missing information. No scores.
-
-## Data flow (voice turn)
-
-1. User holds push-to-talk (start/stop buttons).
-2. Browser MediaRecorder captures WebM/MP4/Ogg.
-3. Frontend posts blob to `/api/transcribe`.
-4. Backend converts + transcribes locally.
-5. Transcript fills the textarea for human edit.
-6. User sends → `/api/next` (state machine ± Ollama) → Camille reply → browser TTS.
+Factual JSON only (no scores).
 
 ## Security boundaries
-- Bind address defaults to `127.0.0.1`.
-- Max audio upload 8 MB; max JSON history bounded.
+- Bind `127.0.0.1` by default.
+- Max audio 8 MB; bounded JSON history.
 - Path traversal blocked for static files.
-- Subprocess calls use argument lists (no shell).
-- No persistence of candidate audio/transcripts server-side.
+- Subprocess argument lists (no shell).
+- No server-side persistence of candidate audio/transcripts.
