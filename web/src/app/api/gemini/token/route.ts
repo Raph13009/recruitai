@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { fail, handleError, readJson } from "@/lib/api";
-import { defaultJob, getJob, getSessionById, jobBrief, markStarted } from "@/lib/db/mock";
+import { defaultJob, getJob, getSessionById, hydrateFromCookie, jobBrief, markStarted, persistSession } from "@/lib/db/mock";
 import { createLiveToken } from "@/lib/gemini/token";
 
 const bodySchema = z.object({ sessionId: z.string().optional() });
 
 export async function POST(req: Request) {
+  await hydrateFromCookie();
   const body = await readJson(req, bodySchema);
   if ("error" in body) return body.error;
 
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
     if (session.status === "completed") return fail("Entretien déjà terminé.", 409);
     job = getJob(session.job_id) ?? job;
     markStarted(session, "audio");
+    await persistSession(session.id);
   }
 
   try {

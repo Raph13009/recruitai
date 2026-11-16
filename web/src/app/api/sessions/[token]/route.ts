@@ -1,7 +1,8 @@
 import { fail } from "@/lib/api";
-import { getSessionByToken, toCandidatePayload } from "@/lib/db/mock";
+import { getSessionByToken, hydrateFromCookie, toCandidatePayload } from "@/lib/db/mock";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/sessions/[token]">) {
+  await hydrateFromCookie();
   const { token } = await ctx.params;
   const session = getSessionByToken(token);
   const payload = session && toCandidatePayload(session);

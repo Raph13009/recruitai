@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, readJson } from "@/lib/api";
-import { createSession } from "@/lib/db/mock";
+import { createSession, persistSession } from "@/lib/db/mock";
 
 const bodySchema = z.object({
   jobId: z.string().optional(),
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   if ("error" in body) return body.error;
   const session = createSession(body.data);
   if (!session) return fail("Poste introuvable.", 404);
+  await persistSession(session.id);
   return Response.json(
     { id: session.id, token: session.token, link: `${req.nextUrl.origin}/interview/${session.token}` },
     { status: 201 },

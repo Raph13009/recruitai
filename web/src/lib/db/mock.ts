@@ -10,6 +10,7 @@ import { AI_DISCLOSURE } from "@/lib/interview/prompt";
 import { buildReport } from "@/lib/interview/report";
 import { getDemoJobFacts, toJobBrief, type JobBrief, type JobFacts } from "@/lib/job";
 import { env } from "@/lib/env";
+import { readDurableBag, writeDurableBag } from "@/lib/db/persist";
 
 interface Store {
   agencies: Agency[];
@@ -26,19 +27,25 @@ const g = globalThis as unknown as { __recruitaiStore?: Store };
 const now = () => new Date().toISOString();
 const newToken = () => randomBytes(18).toString("base64url");
 
+// Stable IDs so a sealed session cookie still resolves the job after a cold start.
+const AGENCY_ID = "00000000-0000-4000-8000-000000000001";
+const RECRUITER_ID = "00000000-0000-4000-8000-000000000002";
+const JOB_ID = "00000000-0000-4000-8000-000000000003";
+const CONFIG_ID = "00000000-0000-4000-8000-000000000004";
+
 function seed(): Store {
   const t = now();
-  const agency: Agency = { id: randomUUID(), name: "Interim Express", created_at: t };
+  const agency: Agency = { id: AGENCY_ID, name: "Interim Express", created_at: t };
   const recruiter: Recruiter = {
-    id: randomUUID(), agency_id: agency.id, full_name: "Recruteur Démo", email: "recruteur@interim-express.example", created_at: t,
+    id: RECRUITER_ID, agency_id: agency.id, full_name: "Recruteur Démo", email: "recruteur@interim-express.example", created_at: t,
   };
   const facts = getDemoJobFacts();
   const job: Job = {
-    id: randomUUID(), agency_id: agency.id, title: facts.job_title, location: facts.location,
+    id: JOB_ID, agency_id: agency.id, title: facts.job_title, location: facts.location,
     status: "open", facts, created_at: t, updated_at: t,
   };
   const config: InterviewConfig = {
-    id: randomUUID(), agency_id: agency.id, job_id: job.id, language: "fr",
+    id: CONFIG_ID, agency_id: agency.id, job_id: job.id, language: "fr",
     voice: env.geminiVoice(), ai_disclosure: AI_DISCLOSURE, created_at: t,
   };
   const store: Store = {
@@ -101,6 +108,35 @@ function db(): Store {
   return (g.__recruitaiStore ??= seed());
 }
 
+/**
+ * Pull the sealed session cookie into this serverless instance.
+ * Without this, POST /api/sessions on one instance + later /api/liveavatar on another → 404.
+ */
+export async function hydrateFromCookie(): Promise<void> {
+  const bag = await readDurableBag();
+  if (!bag?.session?.id) return;
+  const store = db();
+  // Remap to the stable demo job/config if this instance's seed ids differ.
+  bag.session.job_id = JOB_ID;
+  bag.session.agency_id = AGENCY_ID;
+  bag.session.interview_config_id = CONFIG_ID;
+  const idx = store.sessions.findIndex((s) => s.id === bag.session.id || s.token === bag.session.token);
+  if (idx >= 0) store.sessions[idx] = bag.session;
+  else store.sessions.push(bag.session);
+
+  for (const turn of bag.transcripts ?? []) {
+    turn.agency_id = AGENCY_ID;
+    if (!store.transcripts.some((t) => t.id === turn.id)) store.transcripts.push(turn);
+  }
+}
+
+/** Write the active session back to the cookie so the next instance can find it. */
+export async function persistSession(sessionId: string): Promise<void> {
+  const session = getSessionById(sessionId);
+  if (!session) return;
+  await writeDurableBag({ session, transcripts: getTranscript(sessionId) });
+}
+
 export const jobBrief = (job: Job): JobBrief => toJobBrief(job.facts);
 
 // ---------- recruiter side ----------
@@ -155,6 +191,7 @@ export function createSession(input: { jobId?: string; candidateLabel?: string }
     status: "created", mode: null, memory: emptyMemory(), created_at: now(), started_at: null, completed_at: null,
   };
   store.sessions.push(session);
+  // Fire-and-forget cookie write is not possible here (sync). Callers must await persistSession.
   return session;
 }
 

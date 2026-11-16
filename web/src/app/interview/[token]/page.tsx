@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton, SiteHeader } from "@/components/brand";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
-import { getSessionByToken, toCandidatePayload } from "@/lib/db/mock";
+import { getSessionByToken, hydrateFromCookie, toCandidatePayload } from "@/lib/db/mock";
 
 export const metadata = { title: "Entretien · RecruitAI", robots: { index: false } };
 
@@ -22,6 +22,7 @@ export default function InterviewPage({ params }: PageProps<"/interview/[token]"
 
 async function Room({ params }: Pick<PageProps<"/interview/[token]">, "params">) {
   await connection();
+  await hydrateFromCookie();
   const { token } = await params;
   const session = getSessionByToken(token);
   const payload = session && toCandidatePayload(session);

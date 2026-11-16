@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { fail, handleError, readJson } from "@/lib/api";
-import { getSessionById, markStarted } from "@/lib/db/mock";
+import { getSessionById, hydrateFromCookie, markStarted, persistSession } from "@/lib/db/mock";
 import { env } from "@/lib/env";
 import { createLiteSessionToken } from "@/lib/liveavatar/client";
 
 const bodySchema = z.object({ sessionId: z.string(), sandbox: z.boolean().optional() });
 
 export async function POST(req: Request) {
+  await hydrateFromCookie();
   if (!env.liveAvatarApiKey()) return fail("LIVEAVATAR_API_KEY manquant côté serveur.", 503);
   const body = await readJson(req, bodySchema);
   if ("error" in body) return body.error;
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
   try {
     const info = await createLiteSessionToken({ sandbox: body.data.sandbox });
     markStarted(session, "avatar");
+    await persistSession(session.id);
     return Response.json(info);
   } catch (err) {
     return handleError(err);
