@@ -1,4 +1,4 @@
-# Setup — RecruitAI V0.5
+# Setup — RecruitAI V0.6
 
 ## Prerequisites
 - macOS (Apple Silicon preferred; Metal used by whisper.cpp when available)
@@ -51,6 +51,7 @@ OLLAMA_MODEL=qwen3:0.6b python3 server.py
 ```bash
 python3 tests/test_server.py
 python3 tests/test_conversation_regression.py
+python3 tests/test_mixed_intent.py
 python3 scripts/benchmark_models.py   # writes docs/BENCHMARK.md with measured numbers
 ```
 

@@ -110,7 +110,7 @@ function showError(msg) {
   setPhase(Phase.ERROR);
 }
 
-function setProgress(turn, max = 12) {
+function setProgress(turn, max = 20) {
   const t = Math.min(turn, max);
   $("progress-text").textContent = `${t} / ${max}`;
   $("progress-fill").style.width = `${(t / max) * 100}%`;

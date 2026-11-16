@@ -356,7 +356,7 @@ def test_health(port: int):
     status, data = http_json("GET", f"http://127.0.0.1:{port}/api/health")
     check("health ok", status == 200 and data.get("ok") is True)
     check("health job", data.get("job", {}).get("agency") == "Interim Express")
-    check("health version 0.5", data.get("version") == "0.5", str(data.get("version")))
+    check("health version 0.6", data.get("version") == "0.6", str(data.get("version")))
     check("health has model", bool(data.get("model")), str(data.get("model")))
     check("health has fallback", bool(data.get("fallback_model")), str(data.get("fallback_model")))
 

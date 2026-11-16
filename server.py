@@ -1,4 +1,4 @@
-"""RecruitAI V0.5 — local-first conversational interview POC (Python 3.10+ stdlib only)."""
+"""RecruitAI V0.6 — local-first conversational interview POC (Python 3.10+ stdlib only)."""
 from __future__ import annotations
 
 import json
@@ -187,11 +187,15 @@ def _naturalize_keeps_facts(stage: str, scripted: str, reply: str, job: dict) ->
         "experience": (
             "logistique", "manutention", "expérience", "experience", "tâches", "taches",
             "débutant", "debutant", "restauration", "restaurant", "salle", "rythme", "concrètement", "concretement",
+            "btp", "chantier", "sols",
         ),
-        "availability": ("disponible", "disponibilité", "disponibilite", "à partir", "a partir", "début", "debut"),
+        "availability": (
+            "disponible", "disponibilité", "disponibilite", "à partir", "a partir", "début", "debut",
+            "poursuivre", "tardive", "lyon", "paris",
+        ),
         "hours": ("horaire", "créneau", "creneau", "6:00", "6h", "13:00", "13h", "20:00", "20h"),
-        "salary": ("salaire", "rémunér", "remuner", "12,50", "12.50", "brut"),
-        "questions": ("question",),
+        "salary": ("salaire", "rémunér", "remuner", "12,50", "12.50", "brut", "augmentation", "garanti", "recruteur"),
+        "questions": ("question", "écoute", "ecoute"),
         "closing": ("merci", "recruteur", "clôtur", "clotur", "au revoir"),
     }
     needles = stage_needles.get(stage)
@@ -256,7 +260,7 @@ def call_ollama_naturalize(history: list, stage: str, scripted: str, job: dict) 
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "RecruitAI/0.5"
+    server_version = "RecruitAI/0.6"
 
     def send_json(self, code: int, payload: dict) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode()
@@ -284,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "ok": True,
-                    "version": "0.5",
+                    "version": "0.6",
                     "model": MODEL,
                     "fallback_model": FALLBACK_MODEL,
                     "mode": "local",

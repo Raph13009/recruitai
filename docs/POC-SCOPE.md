@@ -3,7 +3,7 @@
 ## Product hypothesis
 A French staffing recruiter can collect role-related declarations through a short structured AI interview, then review a factual report — without automated suitability scoring.
 
-## v0.5 In scope
+## v0.6 In scope
 - One fictional job from `data/demo_job.json`: Interim Express — Agent de quai / manutentionnaire (Lyon)
 - Conversational engine: intent → extraction → memory → response (stage guides, does not dictate every sentence)
 - Contextual answers (ordinal hours, restaurant follow-ups, immediate availability, guarded names)

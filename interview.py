@@ -31,9 +31,18 @@ STAGES = [
 ]
 COLLECT_STAGES = ("experience", "availability", "hours", "salary", "questions")
 
-MAX_USER_TURNS = 16
+MAX_USER_TURNS = 20
 MAX_FOLLOWUPS_PER_STAGE = 1
 MAX_REASKS_PER_STAGE = 2
+MAX_QUESTION_WAIT_TURNS = 3
+
+# Temporary conversational sub-states (orthogonal to main interview stages)
+SUB_NONE = ""
+SUB_AWAITING_CANDIDATE_QUESTION = "AWAITING_CANDIDATE_QUESTION"
+SUB_ANSWERING_CANDIDATE_QUESTION = "ANSWERING_CANDIDATE_QUESTION"
+SUB_AWAITING_CLARIFICATION = "AWAITING_CLARIFICATION"
+SUB_RESUMING_INTERVIEW = "RESUMING_INTERVIEW"
+SUB_AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
 
 Intent = str  # ANSWER | QUESTION_ABOUT_JOB | CLARIFICATION_REQUEST | INCOMPLETE_ANSWER | OFF_TOPIC | END_INTERVIEW
 
@@ -53,13 +62,13 @@ _TIME_CUES = (
     "dispo", "après", "apres", "demain", "dès", "des que", "dès que",
     "janvier", "février", "fevrier", "mars", "avril", "mai", "juin",
     "juillet", "août", "aout", "septembre", "octobre", "novembre", "décembre", "decembre",
-    "202", "pas disponible", "indisponible",
+    "202", "pas disponible", "indisponible", "1er", "premier",
 )
 
 _TASK_CUES = (
     "prépar", "prepar", "emball", "picking", "packing", "charg", "décharg", "decharg",
     "tri", "colis", "quai", "manutention", "inventaire", "réception", "reception",
-    "salle", "service", "cuisine", "caisse", "bar",
+    "salle", "service", "cuisine", "caisse", "bar", "sols", "chantier", "maçonn", "maconn",
 )
 
 _COMPANY_CUES = (
@@ -68,6 +77,12 @@ _COMPANY_CUES = (
 )
 
 _RESTAURANT_CUES = ("restaurant", "restauration", "salle", "service", "cuisine", "barman", "serve")
+_BTP_CUES = ("btp", "chantier", "chantiers", "construction", "maçonn", "maconn", "sols", "génie civil", "genie civil")
+_MONTHS_FR = {
+    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
+    "juillet": 7, "août": 8, "aout": 8, "septembre": 9, "octobre": 10,
+    "novembre": 11, "décembre": 12, "decembre": 12,
+}
 
 
 def next_monday(today: date | None = None) -> date:
@@ -112,8 +127,24 @@ def strip_roleplay_prefixes(text: str) -> str:
     return t.strip()
 
 
-def answer_job_topic(topic: str, job: dict[str, Any]) -> str:
+def is_raise_question(text: str) -> bool:
+    low = text.lower()
+    return bool(
+        re.search(
+            r"(?i)augment|pay[eé]\s+plus|plus\s+si|évolution\s+(de\s+)?salaire|"
+            r"augmenter|si\s+je\s+travaille\s+bien",
+            low,
+        )
+    )
+
+
+def answer_job_topic(topic: str, job: dict[str, Any], *, user_text: str = "") -> str:
     hours = " ou ".join(job["working_hours"])
+    if topic == "raise":
+        return (
+            "Je n'ai pas d'information sur une éventuelle augmentation. "
+            "Ce n'est donc pas garanti. Un recruteur pourra vous le préciser."
+        )
     if topic == "salary":
         return f"La mission est rémunérée {job['salary_note']}."
     if topic == "hours":
@@ -132,7 +163,10 @@ def answer_job_topic(topic: str, job: dict[str, Any]) -> str:
     if topic == "start":
         return f"La date de début indiquée sur la fiche est le {job['start_date_fr']}."
     if topic == "location":
-        return f"Le poste est situé à {job['location']}."
+        low = (user_text or "").lower()
+        if "paris" in low and job["location"].lower() != "paris":
+            return f"La mission se déroule à {job['location']}, pas à Paris."
+        return f"La mission se déroule à {job['location']}."
     return (
         "Je ne dispose que des informations de la fiche de poste. "
         "Un recruteur humain pourra préciser le reste."
@@ -141,6 +175,8 @@ def answer_job_topic(topic: str, job: dict[str, Any]) -> str:
 
 def detect_job_topic(text: str) -> str | None:
     low = text.lower()
+    if is_raise_question(text):
+        return "raise"
     if re.search(r"\b(salaire|r[eé]mun[eé]ration|pay[eé]|combien|taux\s*horaire|indemnit)", low):
         return "salary"
     if re.search(r"\b(horaire|cr[eé]neaux?|shift|plage\s+horaire)", low):
@@ -151,7 +187,11 @@ def detect_job_topic(text: str) -> str | None:
         return "contract"
     if re.search(r"\b(d[eé]but|commencer|date\s+de\s+prise|lundi\s+prochain)", low) and "?" in text:
         return "start"
-    if re.search(r"\b(o[uù]|localisation|adresse|lyon)\b", low) and looks_like_question(text):
+    if re.search(
+        r"(?i)(c[' ]est\s+sur|cest\s+sur|sur\s+paris|\bparis\b|localisation|adresse|\bo[uù]\b|\blyon\b|"
+        r"marseille|lille|toulouse|nantes|bordeaux)",
+        low,
+    ) and (looks_like_question(text) or "?" in text or "c'est sur" in low or "cest sur" in low or "paris" in low):
         return "location"
     return None
 
@@ -178,7 +218,8 @@ def looks_like_question(text: str) -> bool:
     return low.startswith(
         (
             "est-ce", "c'est combien", "combien", "quel", "quelle", "quels", "quelles",
-            "pouvez", "peux", "pourquoi", "où", "ou est", "comment",
+            "pouvez", "peux", "pourquoi", "où", "ou est", "comment", "c'est sur", "cest sur",
+            "je peux", "est ce que",
         )
     )
 
@@ -224,21 +265,30 @@ class InterviewSlots:
 
     experience: str | None = None
     experience_normalized: str | None = None
-    experience_sector: str | None = None  # restauration | logistique | autre | debutant
+    experience_sector: str | None = None  # restauration | logistique | btp | autre | debutant
     experience_tasks: str | None = None
+    experience_industries: list[str] = field(default_factory=list)
+    experience_turn_id: int | None = None
     has_logistics: bool | None = None
     pending_exp_followup: bool = False
 
     availability: str | None = None
     availability_normalized: str | None = None
+    availability_date: str | None = None
+    availability_turn_id: int | None = None
+    availability_mismatch: bool = False
 
     accepted_hours: str | None = None
     hours_normalized: str | None = None
     hours_pending_align: bool = False
+    hours_turn_id: int | None = None
 
     salary_expectations: str | None = None
+    salary_turn_id: int | None = None
     candidate_name: str | None = None
     candidate_questions: list[str] = field(default_factory=list)
+    question_records: list[dict[str, Any]] = field(default_factory=list)
+    fact_log: list[dict[str, Any]] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     reasks: dict[str, int] = field(default_factory=dict)
     followups: dict[str, int] = field(default_factory=dict)
@@ -247,23 +297,33 @@ class InterviewSlots:
     contradictions: list[str] = field(default_factory=list)
     unanswered: list[str] = field(default_factory=list)
 
+    sub_state: str = SUB_NONE
+    resume_stage: str = ""
+    question_wait_turns: int = 0
+    turn_counter: int = 0
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "experience": self.experience,
             "experience_normalized": self.experience_normalized,
             "experience_sector": self.experience_sector,
             "experience_tasks": self.experience_tasks,
+            "experience_industries": list(self.experience_industries),
             "has_logistics": self.has_logistics,
             "availability": self.availability,
             "availability_normalized": self.availability_normalized,
+            "availability_date": self.availability_date,
+            "availability_mismatch": self.availability_mismatch,
             "accepted_hours": self.accepted_hours,
             "hours_normalized": self.hours_normalized,
             "salary_expectations": self.salary_expectations,
             "candidate_name": self.candidate_name,
             "candidate_questions": list(self.candidate_questions),
+            "question_records": list(self.question_records),
             "missing_information": list(self.missing),
             "contradictions": list(self.contradictions),
             "pending_exp_followup": self.pending_exp_followup,
+            "sub_state": self.sub_state,
         }
 
     def memory_brief(self) -> str:
@@ -310,6 +370,7 @@ class TurnResult:
     progress_turn: int = 0
     progress_max: int = MAX_USER_TURNS
     goal: str = ""
+    sub_state: str = SUB_NONE
 
 
 # --- Extraction ---
@@ -339,20 +400,45 @@ def extract_candidate_name(text: str) -> str | None:
     return None
 
 
+def parse_availability_date(text: str, job: dict[str, Any]) -> date | None:
+    low = text.lower()
+    start = date.fromisoformat(job["start_date"])
+    year = start.year
+    m = re.search(
+        r"(?:à\s+partir\s+du\s+|des?\s+|du\s+|le\s+)?(1er|1|premier|\d{1,2})\s+"
+        r"(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)"
+        r"(?:\s+(\d{4}))?",
+        low,
+    )
+    if m:
+        day_s, month_s, year_s = m.group(1), m.group(2), m.group(3)
+        day = 1 if day_s in ("1er", "1", "premier") else int(day_s)
+        month = _MONTHS_FR[month_s]
+        y = int(year_s) if year_s else year
+        try:
+            return date(y, month, day)
+        except ValueError:
+            return None
+    return None
+
+
 def normalize_availability(text: str, job: dict[str, Any]) -> tuple[str, str] | None:
     """Return (raw, normalized) or None."""
     low = text.lower()
     if not any(c in low for c in _TIME_CUES + ("mainten", "tout de suite", "asap")):
         if not re.search(r"dispo|disponible|commencer|partir", low):
             return None
-    raw = text.strip()
+    # Prefer clause before a trailing question for raw storage
+    raw = re.split(r"\?\s*", text.strip())[0].strip(" ,") or text.strip()
+    parsed = parse_availability_date(text, job)
+    if parsed:
+        return raw, f"à partir du {format_fr_date(parsed)}"
     if any(w in low for w in ("maintenant", "maintennat", "immédiat", "immediat", "tout de suite", "asap", "de suite")):
         return raw, f"immédiatement (fiche: début {job['start_date_fr']})"
     if "semaine prochaine" in low:
         return raw, "semaine prochaine"
     if "dans un mois" in low or "un mois" in low:
         return raw, "dans un mois"
-    # weekday mention
     for day in ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"):
         if day in low:
             return raw, f"à partir de {day}"
@@ -493,6 +579,8 @@ def extract_salary_value(text: str) -> str | None:
     low = text.lower().strip()
     if not low:
         return None
+    if is_raise_question(text):
+        return None
     if any(
         w in low
         for w in (
@@ -516,20 +604,30 @@ def analyze_experience(text: str) -> dict[str, Any]:
         "tasks": None,
         "needs_followup": False,
         "is_beginner": False,
+        "industries": [],
     }
+    # Never treat salary/raise questions as experience
+    if is_raise_question(text) and not any(c in low for c in _BTP_CUES + _RESTAURANT_CUES + _COMPANY_CUES + ("logistique", "manutention")):
+        return out
+    topic = detect_job_topic(text)
+    if topic in ("raise", "salary", "location", "hours", "start") and looks_like_question(text):
+        if not any(c in low for c in ("travaill", "expérience", "experience", "bossé", "btp", "restaurant", "logistique", "chantier")):
+            return out
+
     has_rest = any(c in low for c in _RESTAURANT_CUES)
+    has_btp = any(c in low for c in _BTP_CUES)
     denies_logistics = bool(
         re.search(
             r"(?i)(jamais|pas|aucune?).{0,40}(logistique|manutention|entrep[oô]t)|"
             r"(débutant|debutant)",
             low,
         )
-    ) and not has_rest and not any(c in low for c in _TASK_CUES + _COMPANY_CUES)
+    ) and not has_rest and not has_btp and not any(c in low for c in _TASK_CUES + _COMPANY_CUES)
 
-    # Explicit beginner / no logistics — no task follow-up
     if denies_logistics or (
         any(b in low for b in ("débutant", "debutant", "jamais travaill", "pas d'expérience", "pas d'experience", "aucune expérience", "aucune experience"))
         and not has_rest
+        and not has_btp
         and not any(c in low for c in _TASK_CUES + _COMPANY_CUES)
     ):
         out["is_beginner"] = True
@@ -539,8 +637,7 @@ def analyze_experience(text: str) -> dict[str, Any]:
         out["needs_followup"] = False
         return out
 
-    # "jamais ... logistique" but other sector mentioned (e.g. restauration) → handled below
-    if "jamais" in low and any(s in low for s in ("logistique", "manutention", "entrepôt", "entrepot")) and not has_rest:
+    if "jamais" in low and any(s in low for s in ("logistique", "manutention", "entrepôt", "entrepot")) and not has_rest and not has_btp:
         out["is_beginner"] = True
         out["has_logistics"] = False
         out["sector"] = "debutant"
@@ -554,13 +651,25 @@ def analyze_experience(text: str) -> dict[str, Any]:
     elif has_log:
         out["has_logistics"] = True
 
+    if has_btp:
+        out["sector"] = "btp"
+        out["industries"] = ["BTP"]
+        out["normalized"] = "expérience dans le BTP / chantiers"
+        out["has_logistics"] = False if out["has_logistics"] is None else out["has_logistics"]
+        if any(c in low for c in ("sols", "chantier", "maçonn", "maconn", "coffrage")):
+            out["tasks"] = text.strip()
+            out["needs_followup"] = False
+        else:
+            out["needs_followup"] = True
+        return out
+
     if has_rest:
         out["sector"] = "restauration"
+        out["industries"] = ["restauration"]
         if out["has_logistics"] is False:
             out["normalized"] = "expérience en restauration, sans expérience logistique déclarée"
         else:
             out["normalized"] = "expérience en restauration"
-        # follow-up unless concrete tasks already present
         if not any(c in low for c in ("salle", "service", "cuisine", "caisse", "bar", "prépar", "plat")):
             out["needs_followup"] = True
         else:
@@ -568,13 +677,14 @@ def analyze_experience(text: str) -> dict[str, Any]:
             out["needs_followup"] = False
     elif has_log and out["has_logistics"] is not False:
         out["sector"] = "logistique"
+        out["industries"] = ["logistique"]
         out["normalized"] = "expérience en logistique / manutention"
         if not any(c in low for c in _TASK_CUES):
             out["needs_followup"] = True
         else:
             out["tasks"] = text.strip()
     elif any(c in low for c in _COMPANY_CUES) or (
-        ("travaill" in low or "expérience" in low or "experience" in low)
+        ("travaill" in low or "expérience" in low or "experience" in low or "bossé" in low or "bosse" in low)
         and not denies_logistics
     ):
         out["sector"] = "autre"
@@ -582,7 +692,7 @@ def analyze_experience(text: str) -> dict[str, Any]:
         if not any(c in low for c in _TASK_CUES):
             out["needs_followup"] = True
 
-    if out["normalized"] is None and text.strip():
+    if out["normalized"] is None and text.strip() and out["sector"]:
         out["normalized"] = text.strip()
     return out
 
@@ -601,17 +711,18 @@ def experience_needs_followup(text: str, slots: InterviewSlots) -> bool:
     low = text.lower()
     has_yes_exp = (
         low.startswith("oui")
-        or any(c in low for c in _COMPANY_CUES)
+        or any(c in low for c in _COMPANY_CUES + _BTP_CUES)
         or "expérience" in low
         or "experience" in low
         or "travaill" in low
+        or "bossé" in low
         or "ans" in low
         or "mois" in low
     )
-    has_tasks = any(c in low for c in _TASK_CUES)
+    has_tasks = any(c in low for c in _TASK_CUES) or "sols" in low or "chantier" in low
     if info["is_beginner"]:
         return False
-    return bool(has_yes_exp and not has_tasks and info["sector"] != "debutant")
+    return bool(has_yes_exp and not has_tasks and info["sector"] not in (None, "debutant"))
 
 
 def experience_sufficient(text: str, slots: InterviewSlots) -> bool:
@@ -651,9 +762,16 @@ def extract_bundled_slots(text: str, slots: InterviewSlots, job: dict[str, Any] 
         found["salary_expectations"] = text.strip()
 
     info = analyze_experience(text)
-    if info["sector"] or info["is_beginner"] or info["has_logistics"] is not None:
-        if any(c in low for c in _TASK_CUES + _COMPANY_CUES + _RESTAURANT_CUES + ("expérience", "experience", "débutant", "debutant", "jamais", "travaill")):
-            found["experience"] = text.strip()
+    if info.get("sector") and not is_raise_question(text):
+        # Strip trailing question / location clause from mixed utterances
+        exp_raw = re.split(r",\s*(?:c[' ]est\s+sur|je\s+suis\s+dispo|disponible)", text, flags=re.I)[0]
+        exp_raw = re.split(r"\?\s*", exp_raw)[0].strip(" ,")
+        # Do not treat pure availability sentences as experience
+        if exp_raw and not (
+            ("dispo" in exp_raw.lower() or "disponible" in exp_raw.lower())
+            and not any(c in exp_raw.lower() for c in _BTP_CUES + _RESTAURANT_CUES + ("logistique", "manutention", "bossé", "travaill", "expérience", "experience"))
+        ):
+            found["experience"] = exp_raw
 
     name = extract_candidate_name(text)
     if name:
@@ -677,6 +795,9 @@ def _apply_bundle(slots: InterviewSlots, found: dict[str, str], job: dict[str, A
             slots.experience_normalized = info["normalized"]
         if info["sector"]:
             slots.experience_sector = info["sector"]
+        for ind in info.get("industries") or []:
+            if ind not in slots.experience_industries:
+                slots.experience_industries.append(ind)
         if info["has_logistics"] is not None:
             slots.has_logistics = info["has_logistics"]
         if info["tasks"]:
@@ -685,6 +806,7 @@ def _apply_bundle(slots: InterviewSlots, found: dict[str, str], job: dict[str, A
             slots.pending_exp_followup = True
         elif info["tasks"] or info["is_beginner"]:
             slots.pending_exp_followup = False
+        slots.fact_log.append({"field": "experience", "raw": val, "normalized": info.get("normalized"), "turn_id": slots.turn_counter})
         if "expérience" in slots.missing and slots.experience and slots.experience != "(non précisé)":
             slots.missing = [m for m in slots.missing if m != "expérience"]
     if "availability" in found:
@@ -699,6 +821,12 @@ def _apply_bundle(slots: InterviewSlots, found: dict[str, str], job: dict[str, A
             norm = normalize_availability(val, job)
             if norm:
                 slots.availability_normalized = norm[1]
+        parsed = parse_availability_date(val, job)
+        if parsed:
+            slots.availability_date = parsed.isoformat()
+            slots.availability_normalized = f"à partir du {format_fr_date(parsed)}"
+            slots.availability_mismatch = parsed > date.fromisoformat(job["start_date"])
+        slots.fact_log.append({"field": "availability", "raw": val, "normalized": slots.availability_normalized, "turn_id": slots.turn_counter})
     if "accepted_hours" in found:
         prev = slots.accepted_hours
         val = found["accepted_hours"]
@@ -752,6 +880,8 @@ def stage_question(stage: str, job: dict[str, Any], *, variant: str = "default",
         if variant == "followup":
             if slots and slots.experience_sector == "restauration":
                 return "En restauration, vous faisiez quoi exactement au quotidien ?"
+            if slots and slots.experience_sector == "btp":
+                return "Sur les chantiers, vous faisiez quoi exactement comme tâches ?"
             return "Qu'est-ce que vous faisiez concrètement comme tâches ?"
         if variant == "reask":
             return "Avez-vous déjà travaillé en logistique ou en manutention, même brièvement, ou êtes-vous débutant(e) ?"
@@ -759,6 +889,12 @@ def stage_question(stage: str, job: dict[str, Any], *, variant: str = "default",
     if stage == "availability":
         if variant == "reask":
             return f"À partir de quelle date seriez-vous disponible ? Le début prévu sur la fiche est le {job['start_date_fr']}."
+        if variant == "mismatch":
+            return (
+                f"La mission est prévue pour commencer le {job['start_date_fr']}, "
+                f"donc votre disponibilité est plus tardive. "
+                f"Est-ce que vous souhaitez quand même poursuivre cet échange ?"
+            )
         return f"Le début de mission est prévu le {job['start_date_fr']}. À partir de quand seriez-vous disponible ?"
     if stage == "hours":
         if variant == "align":
@@ -789,6 +925,10 @@ def react(stage: str, user_text: str, slots: InterviewSlots, job: dict[str, Any]
     if stage == "intro":
         return "Parfait, on y va."
     if stage == "experience":
+        if slots.experience_sector == "btp" or any(c in low for c in _BTP_CUES):
+            if slots.pending_exp_followup:
+                return "D'accord, le BTP demande souvent du travail d'équipe et de la précision."
+            return "Merci pour ces précisions sur le chantier."
         if slots.experience_sector == "restauration" or any(c in low for c in _RESTAURANT_CUES):
             if slots.pending_exp_followup:
                 return "D'accord. La restauration demande souvent de tenir un rythme soutenu."
@@ -819,17 +959,80 @@ def react(stage: str, user_text: str, slots: InterviewSlots, job: dict[str, Any]
 
 # --- Intent ---
 
+def _declines_questions(text: str) -> bool:
+    low = text.lower()
+    if re.search(
+        r"(?i)\bpas\s+de\s+question|\baucune\b|\bnon merci\b|\bc[' ]est\s+tout\b|\bcest\s+tout\b|"
+        r"\btout\s+est\s+clair\b|\brien\b",
+        low,
+    ):
+        return True
+    return low.strip().rstrip(".!") in {"non", "non merci", "rien", "aucune", "c'est bon", "cest bon"}
+
+
+def _wants_to_ask(text: str) -> bool:
+    low = text.lower().strip().rstrip(".!,;")
+    return low in {"oui", "yes", "ouais", "ouai", "j'ai une question", "jai une question", "une question"}
+
+
+def _short_affirm(text: str) -> bool:
+    low = text.lower().strip().rstrip(".!,;")
+    return low in {
+        "oui", "ok", "okay", "d'accord", "daccord", "yes", "ça me va", "ca me va",
+        "volontiers", "bien sûr", "bien sur", "poursuivre", "continuer",
+    }
+
+
+def extract_embedded_questions(text: str) -> list[tuple[str, str]]:
+    """Return list of (topic, clause) for questions embedded in a mixed utterance."""
+    out: list[tuple[str, str]] = []
+    low = text.lower()
+    # Whole-utterance raise / salary / location questions
+    topic = detect_job_topic(text)
+    if topic and (looks_like_question(text) or "?" in text or topic == "raise"):
+        # Also catch trailing "c'est sur Paris ?"
+        m = re.search(
+            r"(c[' ]est\s+sur\s+[^?]+|est-ce\s+que[^?]*|je\s+peux[^?]*|où\s+[^?]*|combien[^?]*)\??",
+            text,
+            flags=re.I,
+        )
+        if m and detect_job_topic(m.group(0)):
+            t = detect_job_topic(m.group(0)) or topic
+            out.append((t, m.group(0).strip()))
+        elif topic:
+            out.append((topic, text.strip()))
+        return out
+    if "paris" in low and ("c'est sur" in low or "cest sur" in low or "?" in text):
+        out.append(("location", text.strip()))
+    return out
+
+
 def detect_intent(text: str, stage: str, slots: InterviewSlots) -> tuple[Intent, str | None]:
     raw = text.strip()
     if not raw:
         return "INCOMPLETE_ANSWER", None
     if _END.search(raw):
         return "END_INTERVIEW", None
+
+    # Sub-states take priority
+    if slots.sub_state == SUB_AWAITING_CANDIDATE_QUESTION:
+        if _declines_questions(raw):
+            return "ANSWER", None
+        return "QUESTION_ABOUT_JOB", detect_job_topic(raw) or "unknown"
+    if slots.sub_state == SUB_AWAITING_CONFIRMATION:
+        if any(w in raw.lower() for w in ("non", "arrêter", "arreter", "stop")) and not _short_affirm(raw):
+            return "END_INTERVIEW", None
+        return "ANSWER", None
+
     if _CLARIFY.search(raw):
         topic = detect_job_topic(raw)
         if topic and ("salaire" in raw.lower() or "horaire" in raw.lower() or "tâche" in raw.lower()):
             return "QUESTION_ABOUT_JOB", topic
         return "CLARIFICATION_REQUEST", None
+
+    embedded = extract_embedded_questions(raw)
+    if embedded:
+        return "QUESTION_ABOUT_JOB", embedded[0][0]
 
     topic = detect_job_topic(raw)
     if topic and looks_like_question(raw):
@@ -837,11 +1040,16 @@ def detect_intent(text: str, stage: str, slots: InterviewSlots) -> tuple[Intent,
     low_full = raw.lower()
     if topic == "salary" and any(w in low_full for w in ("combien", "c'est combien", "quel salaire")):
         return "QUESTION_ABOUT_JOB", topic
+    if topic == "raise":
+        return "QUESTION_ABOUT_JOB", "raise"
 
     if _OFF.search(raw) and not any(
-        k in raw.lower() for k in ("disponible", "horaire", "salaire", "expérience", "experience", "entrepôt", "restaurant")
+        k in raw.lower() for k in ("disponible", "horaire", "salaire", "expérience", "experience", "entrepôt", "restaurant", "paris", "btp")
     ):
         return "OFF_TOPIC", None
+
+    if stage == "questions" and _wants_to_ask(raw):
+        return "ANSWER", None
 
     if stage == "intro":
         return "ANSWER", None
@@ -918,6 +1126,64 @@ def compose_reply(
     job: dict[str, Any],
 ) -> tuple[str, str, bool, InterviewSlots]:
     done = False
+    slots.turn_counter += 1
+
+    # --- Sub-state: waiting for confirmation after availability mismatch ---
+    if slots.sub_state == SUB_AWAITING_CONFIRMATION:
+        if intent == "END_INTERVIEW" or (
+            any(w in user_text.lower() for w in ("non", "arrêter", "arreter", "stop"))
+            and not _short_affirm(user_text)
+        ):
+            slots.sub_state = SUB_NONE
+            return stage_question("closing", job), "closing", True, slots
+        if _short_affirm(user_text) or any(w in user_text.lower() for w in ("poursuivre", "continuer", "quand même", "quand meme")):
+            slots.sub_state = SUB_NONE
+            # Keep availability date; mismatch acknowledged so we don't re-ask forever
+            slots.availability_mismatch = False
+            next_stage = _next_open_stage(slots)
+            q = stage_question(next_stage, job, slots=slots)
+            reply = f"Très bien, on continue. {q}"
+            slots.last_question = q
+            return reply, next_stage, False, slots
+        q = stage_question("availability", job, variant="mismatch", slots=slots)
+        reply = f"Pour être claire : {q}"
+        slots.last_question = q
+        return reply, "availability", False, slots
+
+    # --- Sub-state: waiting for the actual candidate question after "oui" ---
+    if slots.sub_state == SUB_AWAITING_CANDIDATE_QUESTION:
+        if _declines_questions(user_text):
+            slots.sub_state = SUB_NONE
+            slots._questions_done = True  # type: ignore[attr-defined]
+            return stage_question("closing", job), "closing", True, slots
+        topic_q = detect_job_topic(user_text) or topic or "unknown"
+        if topic_q == "unknown" and not looks_like_question(user_text):
+            slots.question_wait_turns += 1
+            if slots.question_wait_turns >= MAX_QUESTION_WAIT_TURNS:
+                slots.sub_state = SUB_NONE
+                slots._questions_done = True  # type: ignore[attr-defined]
+                return (
+                    "Je n'ai pas reçu de question précise. " + stage_question("closing", job)
+                ), "closing", True, slots
+            reply = "Je vous écoute : quelle est votre question ?"
+            slots.last_question = reply
+            return reply, "questions", False, slots
+        fact = answer_job_topic(topic_q if topic_q != "unknown" else "duties", job, user_text=user_text)
+        if topic_q == "unknown":
+            fact = (
+                "Je n'ai pas cette information dans la fiche de poste. "
+                "Un recruteur pourra vous répondre plus précisément."
+            )
+        slots.candidate_questions.append(user_text)
+        slots.question_records.append(
+            {"raw": user_text, "topic": topic_q, "turn_id": slots.turn_counter, "answered": True, "answer": fact}
+        )
+        reply = f"{fact} Avez-vous une autre question, ou puis-je clôturer l'entretien ?"
+        slots.last_question = reply
+        slots.question_wait_turns = 0
+        # Stay ready for another question
+        slots.sub_state = SUB_AWAITING_CANDIDATE_QUESTION
+        return reply, "questions", False, slots
 
     if intent == "END_INTERVIEW":
         reply = stage_question("closing", job)
@@ -942,21 +1208,60 @@ def compose_reply(
         return reply, stage if stage != "intro" else "experience", False, slots
 
     if intent == "QUESTION_ABOUT_JOB":
-        topic = topic or detect_job_topic(user_text) or "duties"
-        fact = answer_job_topic(topic, job)
-        slots.candidate_questions.append(user_text)
+        # Extract facts AND answer questions (mixed-intent)
         _apply_bundle(slots, extract_bundled_slots(user_text, slots, job), job)
-        if topic == "salary":
-            q = "Est-ce que ça correspond à ce que vous recherchez ?"
-            reply = f"{fact} {q}"
-            slots.last_question = q
-            open_stage = stage if stage in COLLECT_STAGES and stage != "intro" else _next_open_stage(slots)
-            return reply, open_stage, False, slots
-        open_stage = stage if stage in COLLECT_STAGES and not slots.filled(stage) else _next_open_stage(slots)
+        embedded = extract_embedded_questions(user_text)
+        if not embedded:
+            embedded = [(topic or detect_job_topic(user_text) or "duties", user_text)]
+        answers: list[str] = []
+        for t, clause in embedded:
+            fact = answer_job_topic(t, job, user_text=clause)
+            answers.append(fact)
+            slots.candidate_questions.append(clause)
+            slots.question_records.append(
+                {"raw": clause, "topic": t, "turn_id": slots.turn_counter, "answered": True, "answer": fact}
+            )
+
+        topics = {t for t, _ in embedded}
+
+        # Raise/salary question: answer with uncertainty, do NOT re-ask the salary question
+        # (checked before mismatch so a later raise cannot reopen a resolved delay)
+        if "raise" in topics or ("salary" in topics and is_raise_question(user_text)):
+            reply = (
+                f"{' '.join(answers)} "
+                f"Dites-moi si le taux annoncé vous convient, ou si vous avez une autre question."
+            )
+            slots.last_question = reply
+            return reply, "salary" if stage in ("salary", "hours", "questions", "availability") else stage, False, slots
+
+        # Availability mismatch after mixed avail+location (only once, while unresolved)
+        if slots.availability_mismatch and slots.availability_date and slots.sub_state != SUB_AWAITING_CONFIRMATION:
+            d = date.fromisoformat(slots.availability_date)
+            mismatch = (
+                f"Elle est prévue pour commencer le {job['start_date_fr']}, "
+                f"donc votre disponibilité au {format_fr_date(d)} est plus tardive. "
+                f"Est-ce que vous souhaitez quand même poursuivre cet échange ?"
+            )
+            reply = f"{' '.join(answers)} {mismatch}"
+            slots.sub_state = SUB_AWAITING_CONFIRMATION
+            slots.last_question = mismatch
+            return reply, "availability", False, slots
+
+        open_stage = _next_open_stage(slots) if (slots.filled(stage) or stage == "intro" or extract_bundled_slots(user_text, slots, job)) else stage
         if stage == "intro":
             open_stage = _next_open_stage(slots)
+        # If current stage still open and no facts filled it, stay
+        if stage in COLLECT_STAGES and not slots.filled(stage) and stage != "intro":
+            # But if we extracted availability while on availability, advance
+            if stage == "availability" and slots.availability:
+                open_stage = _next_open_stage(slots)
+            elif stage == "experience" and slots.experience and not slots.pending_exp_followup:
+                open_stage = _next_open_stage(slots)
+            elif not any(k in extract_bundled_slots(user_text, slots, job) for k in ("availability", "accepted_hours", "experience", "salary_expectations")):
+                open_stage = stage
+
         q = stage_question(open_stage, job, slots=slots)
-        reply = f"{fact} {q}"
+        reply = f"{' '.join(answers)} {q}"
         slots.last_question = q
         return reply, open_stage, False, slots
 
@@ -996,6 +1301,21 @@ def compose_reply(
         slots.candidate_name = name
 
     if stage == "intro":
+        # Capture bundled facts from the ready utterance (e.g. BTP experience)
+        _apply_bundle(slots, extract_bundled_slots(user_text, slots, job), job)
+        if slots.experience and (slots.pending_exp_followup or experience_needs_followup(slots.experience, slots)):
+            slots.pending_exp_followup = True
+            slots.followups["experience"] = max(slots.followups.get("experience", 0), 1)
+            q = stage_question("experience", job, variant="followup", slots=slots)
+            reply = f"{react('intro', user_text, slots, job)} {q}"
+            slots.last_question = q
+            return reply, "experience", False, slots
+        if slots.experience and not slots.pending_exp_followup:
+            next_stage = _next_open_stage(slots)
+            q = stage_question(next_stage, job, slots=slots)
+            reply = f"{react('intro', user_text, slots, job)} {q}"
+            slots.last_question = q
+            return reply, next_stage, False, slots
         next_stage = "experience"
         q = stage_question(next_stage, job, slots=slots)
         reply = f"{react('intro', user_text, slots, job)} {q}"
@@ -1056,6 +1376,23 @@ def compose_reply(
         slots.availability = raw
         slots.availability_normalized = norm
         _apply_bundle(slots, extract_bundled_slots(user_text, slots, job), job)
+        parsed = parse_availability_date(user_text, job)
+        if parsed:
+            slots.availability_date = parsed.isoformat()
+            slots.availability_normalized = f"à partir du {format_fr_date(parsed)}"
+            slots.availability_mismatch = parsed > date.fromisoformat(job["start_date"])
+        if slots.availability_mismatch and slots.availability_date:
+            d = date.fromisoformat(slots.availability_date)
+            reply = (
+                f"{react('availability', user_text, slots, job)} "
+                f"La mission se déroule à {job['location']}. "
+                f"Elle est prévue pour commencer le {job['start_date_fr']}, "
+                f"donc votre disponibilité au {format_fr_date(d)} est plus tardive. "
+                f"Est-ce que vous souhaitez quand même poursuivre cet échange ?"
+            )
+            slots.sub_state = SUB_AWAITING_CONFIRMATION
+            slots.last_question = reply
+            return reply, "availability", False, slots
         next_stage = _next_open_stage(slots)
         q = stage_question(next_stage, job, slots=slots)
         reply = f"{react('availability', user_text, slots, job)} {q}"
@@ -1110,6 +1447,18 @@ def compose_reply(
 
     if stage == "salary":
         low = user_text.lower()
+        if is_raise_question(user_text):
+            fact = answer_job_topic("raise", job, user_text=user_text)
+            slots.candidate_questions.append(user_text)
+            slots.question_records.append(
+                {"raw": user_text, "topic": "raise", "turn_id": slots.turn_counter, "answered": True, "answer": fact}
+            )
+            reply = (
+                f"{fact} "
+                f"Dites-moi si le taux annoncé vous convient, ou si vous avez une autre question."
+            )
+            slots.last_question = reply
+            return reply, "salary", False, slots
         # Candidate skips remaining formalities ("non merci, pas d'autre question")
         if any(
             p in low
@@ -1131,19 +1480,43 @@ def compose_reply(
         return reply, next_stage, False, slots
 
     if stage == "questions":
+        if _wants_to_ask(user_text):
+            slots.sub_state = SUB_AWAITING_CANDIDATE_QUESTION
+            slots.question_wait_turns = 0
+            reply = "Bien sûr, je vous écoute."
+            slots.last_question = reply
+            return reply, "questions", False, slots
         topic_q = detect_job_topic(user_text)
         if topic_q and looks_like_question(user_text):
             slots.candidate_questions.append(user_text)
-            fact = answer_job_topic(topic_q, job)
+            fact = answer_job_topic(topic_q, job, user_text=user_text)
+            slots.question_records.append(
+                {"raw": user_text, "topic": topic_q, "turn_id": slots.turn_counter, "answered": True, "answer": fact}
+            )
             reply = f"{fact} Avez-vous une autre question, ou puis-je clôturer l'entretien ?"
             slots.last_question = reply
+            slots.sub_state = SUB_AWAITING_CANDIDATE_QUESTION
+            slots.question_wait_turns = 0
             return reply, "questions", False, slots
-        if any(p in user_text.lower() for p in ("pas de question", "aucune", "non", "c'est bon", "cest bon", "rien", "tout est clair", "non merci")):
+        if _declines_questions(user_text) or any(
+            p in user_text.lower() for p in ("pas de question", "aucune", "non", "c'est bon", "cest bon", "rien", "tout est clair", "non merci")
+        ):
+            slots.sub_state = SUB_NONE
             slots._questions_done = True  # type: ignore[attr-defined]
             return stage_question("closing", job), "closing", True, slots
+        # Free-form treated as a question — answer if possible, else ask them to clarify; do NOT close
+        topic_q = detect_job_topic(user_text) or "unknown"
+        fact = answer_job_topic(topic_q if topic_q != "unknown" else "duties", job, user_text=user_text)
+        if topic_q == "unknown":
+            fact = (
+                "Je n'ai pas cette information dans la fiche de poste. "
+                "Un recruteur pourra vous répondre plus précisément."
+            )
         slots.candidate_questions.append(user_text)
-        slots._questions_done = True  # type: ignore[attr-defined]
-        return stage_question("closing", job), "closing", True, slots
+        reply = f"{fact} Avez-vous une autre question, ou puis-je clôturer l'entretien ?"
+        slots.last_question = reply
+        slots.sub_state = SUB_AWAITING_CANDIDATE_QUESTION
+        return reply, "questions", False, slots
 
     if stage == "closing":
         return stage_question("closing", job), "closing", True, slots
@@ -1155,6 +1528,7 @@ def compose_reply(
 # --- Replay / process ---
 
 def replay_state(history: list[dict]) -> tuple[str, InterviewSlots, int]:
+    """Replay via compose_reply so sub-states and mixed intents stay consistent."""
     slots = InterviewSlots()
     stage = "intro"
     user_turns = 0
@@ -1164,115 +1538,25 @@ def replay_state(history: list[dict]) -> tuple[str, InterviewSlots, int]:
         content = str(msg.get("content", "")).strip()
         if role == "assistant":
             slots.last_question = content
+            low = content.lower()
+            if "je vous écoute" in low:
+                slots.sub_state = SUB_AWAITING_CANDIDATE_QUESTION
+            elif "poursuivre cet échange" in low or "quand même poursuivre" in low:
+                slots.sub_state = SUB_AWAITING_CONFIRMATION
             continue
         if role != "user":
             continue
         user_turns += 1
         intent, topic = detect_intent(content, stage, slots)
-        if intent == "END_INTERVIEW":
-            stage = "closing"
-            continue
-        if intent == "CLARIFICATION_REQUEST":
-            slots.reasks[stage] = slots.reasks.get(stage, 0) + 1
-            continue
-        if intent == "QUESTION_ABOUT_JOB":
-            slots.candidate_questions.append(content)
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            if stage == "intro":
-                stage = _next_open_stage(slots)
-            continue
-        if intent == "OFF_TOPIC":
-            continue
-        if intent == "INCOMPLETE_ANSWER":
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            slots.reasks[stage] = slots.reasks.get(stage, 0) + 1
-            if slots.reasks[stage] >= MAX_REASKS_PER_STAGE:
-                _mark_missing(slots, stage)
-                if stage == "experience" and not slots.experience:
-                    slots.experience = content if not is_ready_affirmation(content) else "(non précisé)"
-                    slots.pending_exp_followup = False
-                elif stage == "availability" and not slots.availability:
-                    slots.availability = content if not is_ready_affirmation(content) else "(non précisé)"
-                elif stage == "questions":
-                    slots._questions_done = True  # type: ignore[attr-defined]
-                idx = STAGES.index(stage) if stage in STAGES else 1
-                nxt = STAGES[min(idx + 1, len(STAGES) - 1)]
-                stage = nxt if nxt == "closing" else _next_open_stage(slots)
-            continue
-
-        # ANSWER path mirrored
-        if stage == "intro":
-            stage = "experience"
-            continue
-        if stage == "experience":
-            if slots.pending_exp_followup:
-                slots.experience_tasks = content
-                if slots.experience and content not in slots.experience:
-                    slots.experience = f"{slots.experience} — {content}"
-                slots.pending_exp_followup = False
-                slots.followups["experience"] = slots.followups.get("experience", 0) + 1
-                _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-                stage = _next_open_stage(slots)
-                continue
-            info = analyze_experience(content)
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            if not slots.experience:
-                slots.experience = content
-            if experience_needs_followup(content, slots) or info["needs_followup"]:
-                slots.pending_exp_followup = True
-                slots.followups["experience"] = slots.followups.get("experience", 0) + 1
-                continue
-            slots.pending_exp_followup = False
-            stage = _next_open_stage(slots)
-            continue
-        if stage == "availability":
-            av = normalize_availability(content, job)
-            raw = av[0] if av else content
-            if slots.availability and slots.availability != raw:
-                slots.contradictions.append(f"availability: « {slots.availability} » → « {raw} »")
-            slots.availability = raw
-            slots.availability_normalized = av[1] if av else content
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            stage = _next_open_stage(slots)
-            continue
-        if stage == "hours":
-            resolved = resolve_hours_choice(content, job, slots.last_question)
-            if hours_need_alignment(content) and not resolved and slots.followups.get("hours", 0) < MAX_FOLLOWUPS_PER_STAGE:
-                slots.followups["hours"] = slots.followups.get("hours", 0) + 1
-                slots.hours_pending_align = True
-                continue
-            if resolved:
-                slots.accepted_hours = resolved[1]
-                slots.hours_normalized = resolved[1]
-            else:
-                slots.accepted_hours = extract_hours_value(content, job, slots.last_question) or content
-                slots.hours_normalized = slots.accepted_hours
-            slots.hours_pending_align = False
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            stage = _next_open_stage(slots)
-            continue
-        if stage == "salary":
-            low = content.lower()
-            if any(
-                p in low
-                for p in (
-                    "pas d'autre question", "pas de question", "aucune question",
-                    "c'est tout", "cest tout", "rien d'autre",
-                )
-            ) or re.search(r"(?i)\bnon merci\b.*\bquestion", low):
-                if not slots.salary_expectations:
-                    slots.salary_expectations = "(non précisé — candidat sans autre question)"
-                slots._questions_done = True  # type: ignore[attr-defined]
-                stage = "closing"
-                continue
-            slots.salary_expectations = extract_salary_value(content) or content
-            _apply_bundle(slots, extract_bundled_slots(content, slots, job), job)
-            stage = _next_open_stage(slots)
-            continue
-        if stage == "questions":
-            slots._questions_done = True  # type: ignore[attr-defined]
-            stage = "closing"
-            continue
+        _reply, new_stage, done, slots = compose_reply(
+            intent=intent,
+            topic=topic,
+            stage=stage,
+            slots=slots,
+            user_text=content,
+            job=job,
+        )
+        stage = "closing" if done else new_stage
     return stage, slots, user_turns
 
 
@@ -1365,9 +1649,10 @@ def process_turn(
         slots=slots,
         mode_hint="scripted" if demo else "generate",
         intent=intent,
-        interrupted=intent == "QUESTION_ABOUT_JOB",
+        interrupted=intent == "QUESTION_ABOUT_JOB" or bool(extract_embedded_questions(user_text)),
         progress_turn=user_turns + 1,
         goal=new_stage,
+        sub_state=slots.sub_state,
     )
 
 
@@ -1488,15 +1773,22 @@ def build_report(history: list[dict], job: dict[str, Any] | None = None) -> dict
         "candidate_name": name,
         "experience": slots.experience,
         "experience_normalized": slots.experience_normalized,
+        "experience_industries": list(slots.experience_industries),
+        "experience_tasks": slots.experience_tasks,
         "availability": slots.availability,
         "availability_normalized": slots.availability_normalized,
+        "availability_date": slots.availability_date,
+        "availability_mismatch": slots.availability_mismatch,
         "accepted_working_hours": slots.accepted_hours,
         "hours_normalized": slots.hours_normalized,
         "salary_expectations": slots.salary_expectations,
         "questions_asked_by_candidate": list(slots.candidate_questions),
+        "question_records": list(slots.question_records),
+        "fact_log": list(slots.fact_log),
         "missing_information": list(slots.missing),
         "contradictions": list(slots.contradictions),
         "last_stage": stage,
+        "sub_state": slots.sub_state,
         "user_turns": user_turns,
         "neutral_summary": " ".join(facts) if facts else "Aucune information structurée collectée.",
         "history": history,
