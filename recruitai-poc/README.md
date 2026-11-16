@@ -1,40 +1,46 @@
-# RecruitAI POC — local structured AI interview (V0.4)
+# RecruitAI POC — local structured AI interview (V0.5)
 
 A deliberately small **technical proof of concept** for French temporary staffing agencies. Camille conducts a structured ~5-minute interview for a fictional warehouse role. Runs on a Mac with 8 GB RAM. No Node dependencies, no Python packages for the server. **Never use or commit real candidate data.**
 
-## Features (V0.4)
-- French **conversational** interview: intent detection + conditional stage progression
+## Features (V0.5)
+- French **conversational** interview: separated intent → extraction → memory → response generation
+- Contextual understanding (e.g. « le premier » → `6:00–13:00`, restaurant follow-ups, « dispo maintenant »)
+- Guarded name extraction (never treats « je suis prêt » as a name)
+- Compact structured memory (raw + normalized slots) fed into every reply
 - Demo job: **Interim Express** — Agent de quai / manutentionnaire, Lyon (`data/demo_job.json`)
-- Local **Ollama Qwen3 0.6B** naturalizes composed replies (acknowledgments, follow-ups)
-- Deterministic fallbacks when Qwen digresses or is unavailable
-- Handles clarification, job questions, incomplete / multi-slot answers, contradictions
+- Local **Ollama Qwen3 1.7B** (default) with **0.6B fallback** for polish; scripted path when Ollama fails
 - **Hands-free voice loop** (Web Audio VAD + silence end → whisper → auto-send); pause/resume
 - Local speech-to-text via **whisper.cpp** (`ggml-tiny`)
 - Text input fallback always available
 - Offline scripted demo mode when Ollama is unavailable
 - Lightweight animated 2D interviewer (Camille)
 - Speech output via browser `speechSynthesis` (offline **not guaranteed**)
-- Factual JSON report (experience, availability, hours, salary, questions, missing fields) — **no scoring / ranking / hiring decision**
+- Factual JSON report — **no scoring / ranking / hiring decision**
 - In-memory only; binds to `127.0.0.1` by default
 
 ## Interview flow
 Camille collects the same information but **does not advance blindly** after every message:
 
 1. Intro as AI + brief job explanation
-2. Experience (relevant follow-up when useful)
+2. Experience (contextual follow-up when useful, e.g. restauration → tâches)
 3. Availability
-4. Working hours (aligns custom hours to the two official slots)
+4. Working hours (ordinal / relative answers + custom-hours alignment)
 5. Salary expectations
 6. Candidate questions
 7. Closing (no hiring decision)
 
 Intents: `ANSWER`, `QUESTION_ABOUT_JOB`, `CLARIFICATION_REQUEST`, `INCOMPLETE_ANSWER`, `OFF_TOPIC`, `END_INTERVIEW`.  
-Job facts only from `data/demo_job.json`. No `Question :` / `Réponse :` prefixes.
+Job facts only from `data/demo_job.json`. No `Question :` / `Je retiens que…` robotic prefixes.
 
 ## Quick start (macOS Apple Silicon)
 
 1. Install [Ollama](https://ollama.com/download) (official macOS app — **not Homebrew** for this machine).
-2. Pull the model: `ollama pull qwen3:0.6b` (~523 MB).
+2. Pull models:
+   ```bash
+   export PATH="/Applications/Ollama.app/Contents/Resources:$PATH"
+   ollama pull qwen3:1.7b   # default (~1.4 GB)
+   ollama pull qwen3:0.6b   # fallback (~523 MB)
+   ```
 3. Ensure **FFmpeg** is available (`ffmpeg -version`).
 4. Install / build whisper.cpp once:
    ```bash
@@ -47,27 +53,27 @@ Job facts only from `data/demo_job.json`. No `Question :` / `Réponse :` prefixe
    ```
 6. Open **http://127.0.0.1:8765**.
 
-Optional: check **Mode démo sans Ollama** to exercise the UI without a model.
+Optional env overrides: `OLLAMA_MODEL`, `OLLAMA_FALLBACK_MODEL`. Check **Mode démo sans Ollama** to exercise the UI without a model.
 
 ## Architecture
 
 ```
 Browser (HTML/CSS/JS, Web Audio VAD, MediaRecorder, speechSynthesis)
     → Python stdlib HTTP (127.0.0.1:8765)
-        → interview.py state machine + data/demo_job.json
-        → Ollama localhost (Qwen3 naturalization only)
+        → interview.py (intent / extract / memory / compose)
+        → Ollama localhost (Qwen3 1.7B polish, 0.6B fallback)
         → ffmpeg → whisper.cpp tiny (local STT)
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SETUP.md](docs/SETUP.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SETUP.md](docs/SETUP.md), and [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## Tests
 
 ```bash
 python3 tests/test_server.py
+python3 tests/test_conversation_regression.py
+python3 scripts/benchmark_models.py   # measured 0.6B vs 1.7B
 ```
-
-Covers: job JSON, experienced / beginner candidates, salary interruption, unavailable next Monday, incomplete answers, HTTP APIs, optional Ollama + whisper.
 
 ## Security and compliance
 - Experimental only. Use synthetic answers. Job data is fictional.
@@ -78,6 +84,3 @@ Covers: job JSON, experienced / beginner candidates, salary interruption, unavai
 
 ## Scope
 See [docs/POC-SCOPE.md](docs/POC-SCOPE.md).
-
-## License
-MIT for the code in this repository. External models/tools (Ollama, Qwen, whisper.cpp, browser voices) have separate licenses.

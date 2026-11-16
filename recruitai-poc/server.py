@@ -1,4 +1,4 @@
-"""RecruitAI V0.3 — local-first structured interview POC (Python 3.10+ stdlib only)."""
+"""RecruitAI V0.5 — local-first conversational interview POC (Python 3.10+ stdlib only)."""
 from __future__ import annotations
 
 import json
@@ -19,7 +19,9 @@ import interview
 ROOT = pathlib.Path(__file__).parent
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8765"))
-MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
+# Prefer 1.7B for conversational quality; keep 0.6B as fallback for 8 GB RAM machines.
+MODEL = os.getenv("OLLAMA_MODEL", "qwen3:1.7b")
+FALLBACK_MODEL = os.getenv("OLLAMA_FALLBACK_MODEL", "qwen3:0.6b")
 OLLAMA = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
 MAX_AUDIO_BYTES = 8 * 1024 * 1024  # 8 MB
 WHISPER_DIR = ROOT / "tools" / "whisper.cpp"
@@ -182,7 +184,10 @@ def _naturalize_keeps_facts(stage: str, scripted: str, reply: str, job: dict) ->
         if job["job_title"].split("/")[0].strip().lower().split()[0] not in low and "quai" not in low and "manutention" not in low:
             return False
     stage_needles = {
-        "experience": ("logistique", "manutention", "expérience", "experience", "tâches", "taches", "débutant", "debutant"),
+        "experience": (
+            "logistique", "manutention", "expérience", "experience", "tâches", "taches",
+            "débutant", "debutant", "restauration", "restaurant", "salle", "rythme", "concrètement", "concretement",
+        ),
         "availability": ("disponible", "disponibilité", "disponibilite", "à partir", "a partir", "début", "debut"),
         "hours": ("horaire", "créneau", "creneau", "6:00", "6h", "13:00", "13h", "20:00", "20h"),
         "salary": ("salaire", "rémunér", "remuner", "12,50", "12.50", "brut"),
@@ -206,33 +211,52 @@ def _naturalize_keeps_facts(stage: str, scripted: str, reply: str, job: dict) ->
     return True
 
 
-def call_ollama_naturalize(history: list, stage: str, scripted: str, job: dict) -> str:
-    """Ask Qwen only to rephrase the composed line; fall back if off-topic."""
-    msgs = interview.naturalize_prompt(stage, scripted, job, history)
+def _ollama_chat(model: str, msgs: list, *, num_predict: int = 180) -> str:
     payload = json.dumps(
         {
-            "model": MODEL,
+            "model": model,
             "messages": msgs,
             "stream": False,
             "think": False,
-            "options": {"num_ctx": 2048, "num_predict": 180, "temperature": 0.25},
+            "options": {"num_ctx": 2048, "num_predict": num_predict, "temperature": 0.3},
         }
     ).encode()
     req = urllib.request.Request(
         OLLAMA, data=payload, headers={"Content-Type": "application/json"}, method="POST"
     )
-    with urllib.request.urlopen(req, timeout=90) as resp:
+    with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.load(resp)
-    reply = strip_think(data["message"]["content"])
-    if not reply or interview.looks_off_topic(reply):
-        return scripted
-    if not _naturalize_keeps_facts(stage, scripted, reply, job):
-        return scripted
-    return reply
+    return strip_think(data["message"]["content"])
+
+
+def call_ollama_naturalize(history: list, stage: str, scripted: str, job: dict) -> str:
+    """Polish the composed reply with the preferred local model; fall back safely."""
+    msgs = interview.generate_prompt(stage, scripted, job, history)
+    models = [MODEL]
+    if FALLBACK_MODEL and FALLBACK_MODEL != MODEL:
+        models.append(FALLBACK_MODEL)
+    last_err: Exception | None = None
+    for model in models:
+        try:
+            reply = _ollama_chat(model, msgs)
+            if not reply or interview.looks_off_topic(reply):
+                continue
+            if not _naturalize_keeps_facts(stage, scripted, reply, job):
+                continue
+            # Soft ban on robotic echo phrasing
+            if "je retiens" in reply.lower():
+                continue
+            return reply
+        except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+            last_err = exc
+            continue
+    if last_err:
+        pass
+    return scripted
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "RecruitAI/0.3"
+    server_version = "RecruitAI/0.5"
 
     def send_json(self, code: int, payload: dict) -> None:
         data = json.dumps(payload, ensure_ascii=False).encode()
@@ -260,8 +284,9 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "ok": True,
-                    "version": "0.3",
+                    "version": "0.5",
                     "model": MODEL,
+                    "fallback_model": FALLBACK_MODEL,
                     "mode": "local",
                     "job": {
                         "agency": job["agency"],
@@ -314,7 +339,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(
                 503,
                 {
-                    "error": "Ollama indisponible. Lancez l'application Ollama et tirez qwen3:0.6b, ou activez le mode démo.",
+                    "error": "Ollama indisponible. Lancez l'application Ollama et tirez qwen3:1.7b (ou qwen3:0.6b), ou activez le mode démo.",
                     "detail": str(exc)[:200],
                 },
             )
@@ -331,12 +356,12 @@ class Handler(BaseHTTPRequestHandler):
         turn = interview.process_turn(history, job, demo=demo)
         reply = turn.reply
         mode = "scripted"
-        if not demo and turn.mode_hint == "naturalize":
+        if not demo and turn.mode_hint in ("naturalize", "generate"):
             try:
                 reply = call_ollama_naturalize(history, turn.stage, turn.reply, job)
-                mode = "ollama"
+                mode = "ollama" if reply != turn.reply else "scripted"
             except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError):
-                # Fall back to predefined line rather than failing the interview
+                # Fall back to deterministic composed line rather than failing the interview
                 reply = turn.reply
                 mode = "scripted"
         return self.send_json(

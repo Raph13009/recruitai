@@ -1,4 +1,4 @@
-# Setup — RecruitAI V0.4
+# Setup — RecruitAI V0.5
 
 ## Prerequisites
 - macOS (Apple Silicon preferred; Metal used by whisper.cpp when available)
@@ -6,16 +6,14 @@
 - Official **Ollama macOS app** (do not require Homebrew Ollama)
 - `git`, `cmake`, `ffmpeg`, C/C++ toolchain (Xcode Command Line Tools)
 - Microphone permission in the browser (manual OS prompt)
+- ~8 GB RAM: prefer `qwen3:1.7b`; keep `qwen3:0.6b` as fallback
 
-## Install Ollama model
+## Install Ollama models
 ```bash
 # Ensure Ollama.app is running
-ollama pull qwen3:0.6b
-```
-
-CLI tip if `ollama` is not on PATH:
-```bash
 export PATH="/Applications/Ollama.app/Contents/Resources:$PATH"
+ollama pull qwen3:1.7b
+ollama pull qwen3:0.6b
 ```
 
 ## Build whisper.cpp
@@ -39,12 +37,21 @@ python3 server.py
 
 Environment overrides:
 - `HOST`, `PORT`
-- `OLLAMA_MODEL`, `OLLAMA_URL`
+- `OLLAMA_MODEL` (default `qwen3:1.7b`)
+- `OLLAMA_FALLBACK_MODEL` (default `qwen3:0.6b`)
+- `OLLAMA_URL`
 - `WHISPER_BIN`, `WHISPER_MODEL`, `FFMPEG`
 
-## Tests
+To force the smaller model on tight RAM:
+```bash
+OLLAMA_MODEL=qwen3:0.6b python3 server.py
+```
+
+## Tests & benchmark
 ```bash
 python3 tests/test_server.py
+python3 tests/test_conversation_regression.py
+python3 scripts/benchmark_models.py   # writes docs/BENCHMARK.md with measured numbers
 ```
 
 ## Manual checks remaining
