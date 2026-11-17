@@ -1,0 +1,60 @@
+{
+  "id": "commerce-rayon",
+  "name": "Employé de mise en rayon — renfort magasin",
+  "sector": "Commerce / distribution",
+  "business_need": "Vérifier plages horaires, disponibilité week-end et expérience de mise en rayon",
+  "agency": "Agence Démo Retail",
+  "job_facts": {
+    "position": "Employé de mise en rayon",
+    "city": "Nantes",
+    "contract": "Mission d’intérim de 5 jours",
+    "start_date": "2026-12-14",
+    "gross_hourly_salary_eur": 12.3,
+    "hours": [
+      "05:30–12:30"
+    ],
+    "duties": [
+      "Réception et rangement des produits",
+      "Mise en rayon",
+      "Étiquetage",
+      "Maintien de la propreté"
+    ],
+    "experience": "Débutants acceptés",
+    "weekend": "Samedi inclus, dimanche non précisé",
+    "store_name": null,
+    "travel_allowance": null,
+    "bonuses": null
+  },
+  "introduction": {
+    "job_title_spoken": "employé de mise en rayon",
+    "first_question": "Est-ce que vous avez déjà travaillé en magasin ou en mise en rayon ?"
+  },
+  "topics": [
+    "Expérience en magasin, stock ou accueil",
+    "Disponibilité sur les dates demandées",
+    "Compatibilité avec prise de poste matinale et samedi",
+    "Compréhension des missions",
+    "Questions pratiques"
+  ],
+  "demo_tests": [
+    {
+      "input": "Le samedi oui, mais pas le dimanche",
+      "expected": "Enregistrer samedi accepté, préciser que le dimanche n’est pas confirmé et ne pas présumer un travail dominical"
+    },
+    {
+      "input": "Je peux venir à 7 heures seulement",
+      "expected": "Identifier le décalage avec début prévu 5h30, demander une précision, aucune exclusion automatique"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 6,
+  "guide": {
+    "opening": "Une seule fois : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de [titre]. [première question]». Pas de détails mission, pas de «êtes-vous prêt».",
+    "sequence": "Conversation souple : expérience > disponibilité > horaires > rémunération > questions candidat. Les questions candidates ont toujours priorité.",
+    "acknowledgments": "1 phrase contextuelle maximum, puis une question utile.",
+    "interruption": "Répondre d’abord, attendre une réponse si nécessaire, puis reprendre.",
+    "unknown": "Dire «Je n’ai pas cette information, le recruteur pourra vous le confirmer».",
+    "closure": "Après questions candidat et accord explicite ou fin demandée."
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "logistique-urgent",
+  "name": "Préparateur de commandes — prise de poste rapide",
+  "sector": "Transport / logistique",
+  "business_need": "Préqualification rapide pour missions à fort flux et disponibilité rapprochée",
+  "agency": "Agence Démo Intérim",
+  "job_facts": {
+    "position": "Préparateur de commandes",
+    "city": "Lyon",
+    "contract": "Mission d’intérim de 2 semaines, renouvellement non garanti",
+    "start_date": "2026-11-23",
+    "gross_hourly_salary_eur": 12.5,
+    "hours": [
+      "06:00–13:00",
+      "13:00–20:00"
+    ],
+    "duties": [
+      "Préparation de commandes",
+      "Scan",
+      "Emballage"
+    ],
+    "experience": "Débutants acceptés",
+    "licenses": "Aucune certification imposée dans cette mission fictive",
+    "worksite_address": null,
+    "bonuses": null,
+    "salary_evolution": null
+  },
+  "introduction": {
+    "job_title_spoken": "préparateur de commandes",
+    "first_question": "Est-ce que vous avez déjà travaillé dans la logistique ?"
+  },
+  "topics": [
+    "Expérience pratique en logistique ou compétences transférables",
+    "Date réelle de disponibilité",
+    "Préférence entre les deux créneaux",
+    "Compréhension des missions",
+    "Questions sur la rémunération et la localisation"
+  ],
+  "demo_tests": [
+    {
+      "input": "Le premier",
+      "after": "Vous préférez 6h–13h ou 13h–20h ?",
+      "expected": "Comprendre 06:00–13:00 sans répétition"
+    },
+    {
+      "input": "Je suis dispo le 1er décembre, c’est à Paris ?",
+      "expected": "Enregistrer la date, expliquer que la mission est à Lyon et signaler l’écart avec le début prévu sans rejeter"
+    },
+    {
+      "input": "Je peux être augmenté si je travaille bien ?",
+      "expected": "Indiquer que rien n’est garanti et renvoyer vers le recruteur pour confirmation"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 6,
+  "guide": {
+    "opening": "Une seule fois : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de [titre]. [première question]». Pas de détails mission, pas de «êtes-vous prêt».",
+    "sequence": "Conversation souple : expérience > disponibilité > horaires > rémunération > questions candidat. Les questions candidates ont toujours priorité.",
+    "acknowledgments": "1 phrase contextuelle maximum, puis une question utile.",
+    "interruption": "Répondre d’abord, attendre une réponse si nécessaire, puis reprendre.",
+    "unknown": "Dire «Je n’ai pas cette information, le recruteur pourra vous le confirmer».",
+    "closure": "Après questions candidat et accord explicite ou fin demandée."
+  }
+}

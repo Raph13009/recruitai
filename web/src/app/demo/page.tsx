@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { CheckIcon, ClockIcon, InfoIcon, MicIcon, PlayIcon, ShieldCheckIcon, VideoIcon } from "lucide-react";
+import { CheckIcon, ClockIcon, InfoIcon, MapPinIcon, MicIcon, PlayIcon, ShieldCheckIcon, VideoIcon } from "lucide-react";
 import { startDemo } from "@/app/actions/demo";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { env } from "@/lib/env";
+import { listScenarioCards } from "@/lib/scenarios";
 
 export const metadata = {
   title: "Essayer l’entretien",
-  description: "Passez un entretien de démonstration de cinq minutes, en visio, avec l’intervieweuse IA.",
+  description: "Choisissez un scénario fictif et passez un entretien de démonstration avec Camille.",
 };
 
 export default function DemoPage({ searchParams }: PageProps<"/demo">) {
@@ -22,11 +23,11 @@ export default function DemoPage({ searchParams }: PageProps<"/demo">) {
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20 pt-10 sm:px-6">
         <p className="eyebrow">Démonstration candidat</p>
         <h1 className="display mt-3 text-4xl font-semibold leading-tight sm:text-5xl">
-          Passez l’entretien comme un candidat.
+          Choisissez un scénario, puis passez l’entretien.
         </h1>
         <p className="mt-4 max-w-xl text-lg text-muted-foreground">
-          Un poste fictif d’agent de quai à Lyon. Camille, l’intervieweuse IA, vous pose cinq questions. À la fin,
-          le compte rendu apparaît dans l’espace recruteur du compte de démonstration.
+          Cinq missions fictives. Camille pose les questions ; le compte rendu apparaît dans l’espace recruteur
+          du compte de démonstration. Aucun score.
         </p>
 
         <Card className="mt-8">
@@ -45,7 +46,7 @@ export default function DemoPage({ searchParams }: PageProps<"/demo">) {
                 <span>N’indiquez pas de vraies données personnelles : c’est une démonstration.</span>
               </li>
             </ul>
-            <Suspense fallback={<Skeleton className="h-28 w-full" />}>
+            <Suspense fallback={<Skeleton className="h-40 w-full" />}>
               <Launcher searchParams={searchParams} />
             </Suspense>
           </CardContent>
@@ -62,6 +63,7 @@ async function Launcher({ searchParams }: Pick<PageProps<"/demo">, "searchParams
   const avatar = voice && Boolean(env.liveAvatarApiKey());
   const sandbox = avatar && env.liveAvatarSandbox();
   const available = env.publicDemo();
+  const scenarios = listScenarioCards();
 
   return (
     <div className="space-y-5">
@@ -91,11 +93,30 @@ async function Launcher({ searchParams }: Pick<PageProps<"/demo">, "searchParams
         </Alert>
       )}
 
-      <form action={startDemo}>
-        <Button type="submit" size="lg" className="h-11 rounded-full px-6 text-base" disabled={!available}>
-          <PlayIcon /> Commencer la démonstration
-        </Button>
-      </form>
+      <div className="space-y-3" role="list" aria-label="Scénarios de démonstration">
+        {scenarios.map((s) => (
+          <form key={s.id} action={startDemo} role="listitem" className="rounded-xl border border-border/80 p-4">
+            <input type="hidden" name="scenario" value={s.id} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-foreground">{s.position}</p>
+                  {s.featured && <Badge variant="secondary">Mis en avant</Badge>}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{s.sector}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <MapPinIcon className="size-3.5 shrink-0" />
+                  {s.city}
+                </p>
+              </div>
+              <Button type="submit" size="lg" className="h-11 shrink-0 rounded-full px-5" disabled={!available}>
+                <PlayIcon /> Commencer
+              </Button>
+            </div>
+          </form>
+        ))}
+      </div>
+
       {!voice && (
         <p className="text-sm text-muted-foreground">
           Sans clé configurée, Camille suit un script et parle avec la voix de votre navigateur. Ajoutez

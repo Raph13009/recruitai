@@ -16,7 +16,7 @@ describe("interviewer rules", () => {
   it("rejects inappropriate or absurd answers and never records them", () => {
     expect(prompt).toContain("LIMITES DURES");
     expect(prompt).toContain("Ce n'est pas approprié pour cet entretien.");
-    expect(prompt).toContain("N'enregistre jamais de propos inappropriés, illégaux ou absurdes.");
+    expect(prompt).toContain("N'enregistre jamais d'insultes, d'absurde ou d'illégal.");
   });
 
   it("follows up on vague answers and reframes off-topic ones from the job sheet", () => {

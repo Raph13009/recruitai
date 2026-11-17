@@ -1,0 +1,61 @@
+{
+  "id": "industrie-production",
+  "name": "Opérateur de production — horaires en équipe",
+  "sector": "Industrie",
+  "business_need": "Qualification de candidats à la production avec contraintes horaires",
+  "agency": "Agence Démo Industrie",
+  "job_facts": {
+    "position": "Opérateur de production",
+    "city": "Lille",
+    "contract": "Mission d’intérim de 4 semaines",
+    "start_date": "2026-12-01",
+    "gross_hourly_salary_eur": 12.7,
+    "hours": [
+      "05:00–13:00",
+      "13:00–21:00"
+    ],
+    "duties": [
+      "Alimentation de ligne",
+      "Contrôle visuel",
+      "Conditionnement",
+      "Respect des procédures de sécurité"
+    ],
+    "experience": "Débutants acceptés avec accompagnement annoncé uniquement dans la simulation",
+    "licenses": "Aucune habilitation spécifique exigée dans cette mission fictive",
+    "worksite_address": null,
+    "bonuses": null,
+    "night_work": null
+  },
+  "introduction": {
+    "job_title_spoken": "opérateur de production",
+    "first_question": "Est-ce que vous avez déjà travaillé en production ou en usine ?"
+  },
+  "topics": [
+    "Expérience en environnement de production",
+    "Pratique du travail répétitif et respect des consignes",
+    "Disponibilité",
+    "Compatibilité avec horaires en équipes",
+    "Questions de formation et de sécurité"
+  ],
+  "demo_tests": [
+    {
+      "input": "J’ai jamais fait d’usine mais j’ai fait de la cuisine",
+      "expected": "Reconnaître l’expérience en cuisine, explorer les tâches réellement effectuées sans présumer de compétences"
+    },
+    {
+      "input": "Il y a une prime de nuit ?",
+      "expected": "Dire que les primes et le travail de nuit ne sont pas spécifiés; demander confirmation humaine"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 6,
+  "guide": {
+    "opening": "Une seule fois : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de [titre]. [première question]». Pas de détails mission, pas de «êtes-vous prêt».",
+    "sequence": "Conversation souple : expérience > disponibilité > horaires > rémunération > questions candidat. Les questions candidates ont toujours priorité.",
+    "acknowledgments": "1 phrase contextuelle maximum, puis une question utile.",
+    "interruption": "Répondre d’abord, attendre une réponse si nécessaire, puis reprendre.",
+    "unknown": "Dire «Je n’ai pas cette information, le recruteur pourra vous le confirmer».",
+    "closure": "Après questions candidat et accord explicite ou fin demandée."
+  }
+}

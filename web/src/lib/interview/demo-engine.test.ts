@@ -113,10 +113,11 @@ describe("dialogue", () => {
     return { step, memory, said, done };
   }
 
-  it("opens as an AI and never makes a decision", () => {
+  it("opens as an AI with a short intro and a first question", () => {
     const opening = demoOpening(job, "Camille").say;
-    expect(opening).toContain("je suis Camille, une IA");
-    expect(opening).toContain("Je ne prends aucune décision");
+    expect(opening).toContain("je suis Camille, votre assistante de recrutement IA");
+    expect(opening).toContain("Nous allons échanger pour le poste");
+    expect(opening).not.toMatch(/êtes-vous prêt|on commence \?/i);
   });
 
   it("runs a full interview and records every fact", () => {

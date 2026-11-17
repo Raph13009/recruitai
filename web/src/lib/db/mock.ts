@@ -21,6 +21,7 @@ import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/
 import { AI_DISCLOSURE_TEMPLATE, DEFAULT_PERSONA } from "@/lib/interview/prompt";
 import { buildReport } from "@/lib/interview/report";
 import { getDemoJobFacts, toJobBrief, type JobFacts } from "@/lib/job";
+import { requireScenario, scenarioResourceIds, scenarioToJobFacts } from "@/lib/scenarios";
 
 /** Credentials stay in this store; the rest of the app only ever sees `Recruiter`. */
 type StoredRecruiter = Recruiter & { password_hash: string };
@@ -349,8 +350,44 @@ export async function setJobStatus(agencyId: string, id: string, status: JobStat
   return clone(job);
 }
 
+/** Upserts a demo-agency job from a scenario pack entry (or the legacy demo job). */
+export async function ensureDemoScenarioJob(scenarioId?: string | null): Promise<Job | null> {
+  const store = db();
+  if (!store.agencies.some((a) => a.id === DEMO_IDS.agency)) return null;
+  const scenario = scenarioId ? requireScenario(scenarioId) : null;
+  const ids = scenario ? scenarioResourceIds(scenario.id) : { job: DEMO_IDS.job, config: DEMO_IDS.config };
+  const facts: JobFacts = scenario ? scenarioToJobFacts(scenario) : getDemoJobFacts();
+  const t = now();
+  let job = store.jobs.find((j) => j.id === ids.job);
+  if (!job) {
+    job = {
+      id: ids.job, agency_id: DEMO_IDS.agency, title: facts.job_title, location: facts.location,
+      status: "open", facts, created_at: t, updated_at: t,
+    };
+    store.jobs.push(job);
+  } else {
+    job.title = facts.job_title;
+    job.location = facts.location;
+    job.status = "open";
+    job.facts = facts;
+    job.updated_at = t;
+  }
+  let config = store.interview_configs.find((c) => c.id === ids.config || c.job_id === ids.job);
+  if (!config) {
+    config = { ...newConfig(job), id: ids.config, job_id: ids.job };
+    store.interview_configs.push(config);
+  } else {
+    config.job_id = ids.job;
+    config.ai_disclosure = AI_DISCLOSURE_TEMPLATE;
+  }
+  save();
+  return clone(job);
+}
+
 /** The job behind the public "try it" page: the demo agency's first open job. */
 export async function publicDemoJob(): Promise<Job | null> {
+  const ensured = await ensureDemoScenarioJob(null);
+  if (ensured) return ensured;
   const store = db();
   // Stores saved before the stable ids: the demo agency is the demo account's.
   const agencyId = store.agencies.some((a) => a.id === DEMO_IDS.agency)
@@ -387,10 +424,11 @@ export async function createSession(agencyId: string, input: { jobId: string; ca
 }
 
 /** Called from the public demo's Server Action: the visitor's browser keeps a copy (serverless hosts). */
-export async function createPublicDemoSession(): Promise<InterviewSession | null> {
-  const demo = await publicDemoJob();
+export async function createPublicDemoSession(scenarioId?: string | null): Promise<InterviewSession | null> {
+  const demo = await ensureDemoScenarioJob(scenarioId);
   const job = demo && db().jobs.find((j) => j.id === demo.id);
-  const session = job ? insertSession(job, "Essai public") : null;
+  const label = scenarioId ? `Essai · ${requireScenario(scenarioId).name}` : "Essai public";
+  const session = job ? insertSession(job, label) : null;
   if (session) await rememberForCandidate(session.token);
   return session;
 }

@@ -55,11 +55,15 @@ describe("prompt", () => {
   });
 
   it("introduces the persona as an AI and follows the voice for grammar", () => {
-    expect(buildOpeningLine(job, "Sam")).toContain("je suis Sam, une IA");
+    const opening = buildOpeningLine(job, "Sam");
+    expect(opening).toContain("je suis Sam, votre assistante de recrutement IA");
+    expect(opening).toContain("Nous allons échanger pour le poste");
+    expect(opening).not.toMatch(/êtes-vous prêt|on commence \?/i);
     const female = buildSystemInstruction(job, "Camille", "Aoede");
-    expect(female).toContain("Tu es Camille, une IA");
+    expect(female).toContain("Tu es Camille, assistante de recrutement IA");
     expect(female).toContain("accorde au féminin");
     expect(female).toContain("Lieu : Lyon");
+    expect(female).toContain("NE RESTE JAMAIS SILENCIEUSE");
     expect(buildSystemInstruction(job, "Camille", "Charon")).toContain("accorde au masculin");
     expect(buildSystemInstruction(job, "Camille", "Unknown")).toContain("évite les accords genrés");
   });

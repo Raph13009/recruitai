@@ -13,6 +13,10 @@ export const jobFactsSchema = z.object({
   experience: z.string().min(1),
   start_date_rule: z.string().default("next_monday"),
   disclaimer: z.string().default(""),
+  /** Demo scenario id when the job comes from recruitai-demo-scenarios. */
+  scenario_id: z.string().optional(),
+  first_question: z.string().optional(),
+  job_title_spoken: z.string().optional(),
 });
 
 /** Raw job facts as stored (same shape as data/demo_job.json). */

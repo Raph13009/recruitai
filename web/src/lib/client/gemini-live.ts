@@ -14,6 +14,10 @@ export interface LiveTokenInfo {
 const VOICE_LEVEL = 0.035;
 /** How long after the last loud chunk the candidate still counts as speaking. */
 const VOICE_HANG_MS = 500;
+/** Hard cap: never keep the mic muted forever if playback state sticks. */
+const MAX_AGENT_HOLD_MS = 12_000;
+/** If the candidate spoke/typed and Camille stays silent, nudge the model. */
+const RESPONSE_NUDGE_MS = 8_000;
 
 /**
  * The real-time interviewer: Gemini Live in the browser, with an ephemeral token.
@@ -56,6 +60,12 @@ export class GeminiEngine implements InterviewEngine {
   private started = false;
   private lastVoiceAt = 0;
   private ticker: ReturnType<typeof setInterval> | null = null;
+  /** When the mic was last held for Camille's turn (force-release watchdog). */
+  private holdSince = 0;
+  /** Waiting for Camille after a candidate turn. */
+  private awaitingReplySince = 0;
+  private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  private nudged = false;
 
   constructor(
     private readonly sessionToken: string,
@@ -112,8 +122,9 @@ export class GeminiEngine implements InterviewEngine {
     // Sent by begin(), once the candidate can hear (Raphaël's "Faire parler Camille", 77d7318).
     this.kickoff =
       (opts.resumed
-        ? "La connexion est rétablie. Reprends l'entretien maintenant."
-        : "Commence l'entretien maintenant. Prononce ton ouverture, puis attends ma réponse.") + typed;
+        ? "La connexion est rétablie. Reprends l'entretien maintenant sans refaire l'ouverture."
+        : "Commence l'entretien maintenant. Prononce ton ouverture exacte une seule fois (identité + poste + première question), puis attends ma réponse. Ne demande pas si je suis prêt.") +
+      typed;
   }
 
   async unlock(): Promise<boolean> {
@@ -162,6 +173,7 @@ export class GeminiEngine implements InterviewEngine {
     // The interviewer finishes her sentence first; the answer follows right after.
     if (this.agentTalking) this.pendingTexts.push(clean);
     else this.session.sendRealtimeInput({ text: clean });
+    this.armReplyWatchdog();
   }
 
   agentLevel(): number {
@@ -177,6 +189,7 @@ export class GeminiEngine implements InterviewEngine {
     this.closing = true;
     if (this.ticker) clearInterval(this.ticker);
     if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
     this.flush();
     this.mic.stop();
     this.speaker.close();
@@ -215,7 +228,9 @@ export class GeminiEngine implements InterviewEngine {
   private holdMic() {
     if (this.releaseTimer) clearTimeout(this.releaseTimer);
     this.releaseTimer = null;
+    if (!this.agentTalking) this.holdSince = performance.now();
     this.agentTalking = true;
+    this.clearReplyWatchdog();
   }
 
   /** Reopens the mic once the last words have been played (the audio outlasts the generation). */
@@ -228,13 +243,44 @@ export class GeminiEngine implements InterviewEngine {
         this.releaseTimer = setTimeout(check, 150);
         return;
       }
-      this.agentTalking = false;
-      if (this.pendingTexts.length && this.session) {
-        this.session.sendRealtimeInput({ text: this.pendingTexts.join("\n") });
-        this.pendingTexts = [];
-      }
+      this.forceReleaseMic();
     };
     check();
+  }
+
+  private forceReleaseMic() {
+    this.agentTalking = false;
+    this.holdSince = 0;
+    if (this.pendingTexts.length && this.session) {
+      this.session.sendRealtimeInput({ text: this.pendingTexts.join("\n") });
+      this.pendingTexts = [];
+      this.armReplyWatchdog();
+    }
+  }
+
+  private armReplyWatchdog() {
+    this.awaitingReplySince = performance.now();
+    this.nudged = false;
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = setTimeout(() => this.nudgeIfSilent(), RESPONSE_NUDGE_MS);
+  }
+
+  private clearReplyWatchdog() {
+    this.awaitingReplySince = 0;
+    this.nudged = false;
+    if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = null;
+  }
+
+  /** Unsticks a silent model after the candidate already spoke or typed. */
+  private nudgeIfSilent() {
+    this.nudgeTimer = null;
+    if (this.closing || !this.session || this.agentTalking || this.generating || this.nudged) return;
+    if (!this.awaitingReplySince) return;
+    this.nudged = true;
+    this.session.sendRealtimeInput({
+      text: "Réponds maintenant à ce que je viens de dire, en une phrase courte, puis pose la question suivante. Ne reste pas silencieuse.",
+    });
   }
 
   private tick() {
@@ -242,6 +288,11 @@ export class GeminiEngine implements InterviewEngine {
     if (speaking !== this.agentSpeaking) {
       this.agentSpeaking = speaking;
       this.handlers.onAgentSpeaking(speaking);
+    }
+    // Playback or generation state can stick: reopen the mic so the candidate is not locked out.
+    if (this.agentTalking && this.holdSince && performance.now() - this.holdSince > MAX_AGENT_HOLD_MS) {
+      this.generating = false;
+      this.forceReleaseMic();
     }
   }
 
@@ -326,6 +377,7 @@ export class GeminiEngine implements InterviewEngine {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: call.name, args: call.args ?? {} }),
+          signal: AbortSignal.timeout(8_000),
         });
         const data = (await res.json()) as { result?: string; error?: string; progress?: InterviewProgress };
         output = data.result ?? data.error ?? output;
@@ -337,6 +389,8 @@ export class GeminiEngine implements InterviewEngine {
       functionResponses.push({ id: call.id, name: call.name, response: { output } });
     }
     this.session?.sendToolResponse({ functionResponses });
+    // Tool round-trips must not leave Camille silent: ask her to continue if nothing follows.
+    this.armReplyWatchdog();
     // If no closing turn follows, end anyway after a short wait.
     if (this.endRequested) setTimeout(() => this.fireEnd(), 6000);
   }

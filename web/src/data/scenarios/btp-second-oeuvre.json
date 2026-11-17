@@ -1,0 +1,59 @@
+{
+  "id": "btp-second-oeuvre",
+  "name": "Ouvrier second œuvre — expérience chantier",
+  "sector": "BTP",
+  "business_need": "Recueillir expérience métier et informations de sécurité à vérifier par un recruteur",
+  "agency": "Agence Démo BTP",
+  "job_facts": {
+    "position": "Aide poseur de revêtements de sol",
+    "city": "Toulouse",
+    "contract": "Mission d’intérim de 3 semaines",
+    "start_date": "2026-12-07",
+    "gross_hourly_salary_eur": 13.0,
+    "hours": [
+      "08:00–16:00"
+    ],
+    "duties": [
+      "Préparation du chantier",
+      "Aide à la découpe et pose de revêtements sous encadrement",
+      "Rangement de la zone de travail"
+    ],
+    "experience": "Une expérience de chantier est appréciée, débutants possibles selon validation humaine",
+    "required_certifications": "À confirmer par agence et entreprise utilisatrice",
+    "ppe": "À confirmer auprès du recruteur",
+    "worksite_address": null,
+    "transport": null
+  },
+  "introduction": {
+    "job_title_spoken": "aide poseur de revêtements de sol",
+    "first_question": "Est-ce que vous avez déjà travaillé sur un chantier ?"
+  },
+  "topics": [
+    "Tâches réellement faites sur chantier",
+    "Travail en équipe et consignes",
+    "Disponibilité et déplacements",
+    "Certifications ou formations déclarées, sans validation automatique",
+    "Questions sur équipements et accueil sécurité"
+  ],
+  "demo_tests": [
+    {
+      "input": "Je pose des sols depuis deux ans mais j’ai pas de carte BTP",
+      "expected": "Consigner déclaration, ne pas décider de conformité; orienter vers vérification humaine"
+    },
+    {
+      "input": "Vous fournissez les chaussures ?",
+      "expected": "Ne pas inventer la fourniture; orientation vers recruteur"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 6,
+  "guide": {
+    "opening": "Une seule fois : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de [titre]. [première question]». Pas de détails mission, pas de «êtes-vous prêt».",
+    "sequence": "Conversation souple : expérience > disponibilité > horaires > rémunération > questions candidat. Les questions candidates ont toujours priorité.",
+    "acknowledgments": "1 phrase contextuelle maximum, puis une question utile.",
+    "interruption": "Répondre d’abord, attendre une réponse si nécessaire, puis reprendre.",
+    "unknown": "Dire «Je n’ai pas cette information, le recruteur pourra vous le confirmer».",
+    "closure": "Après questions candidat et accord explicite ou fin demandée."
+  }
+}

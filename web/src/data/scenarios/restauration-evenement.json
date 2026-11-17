@@ -1,0 +1,64 @@
+{
+  "id": "restauration-evenement",
+  "name": "Serveur événementiel — extra ponctuel",
+  "sector": "Hôtellerie / restauration",
+  "business_need": "Vérifier rapidement disponibilité, expérience de service et conditions d’un extra",
+  "agency": "Agence Démo Hospitality",
+  "job_facts": {
+    "position": "Serveur / serveuse événementiel",
+    "city": "Paris",
+    "contract": "Mission d’intérim d’une journée",
+    "start_date": "2026-12-05",
+    "gross_hourly_salary_eur": 13.2,
+    "hours": [
+      "17:00–00:00"
+    ],
+    "duties": [
+      "Mise en place",
+      "Accueil des convives",
+      "Service au plateau",
+      "Rangement"
+    ],
+    "experience": "Première expérience de service appréciée mais non obligatoire pour cette démonstration",
+    "dress_code": null,
+    "meal_provided": null,
+    "transport_reimbursement": null,
+    "bonuses": null
+  },
+  "introduction": {
+    "job_title_spoken": "serveur événementiel",
+    "first_question": "Est-ce que vous avez déjà travaillé en service ou en restauration ?"
+  },
+  "topics": [
+    "Expérience du service ou compétences transférables",
+    "Disponibilité le jour et à l’horaire",
+    "Nature des tâches déjà effectuées",
+    "Questions sur tenue, repas et retour après minuit",
+    "Attentes salariales"
+  ],
+  "demo_tests": [
+    {
+      "input": "Je travaille déjà en restaurant mais seulement le midi",
+      "expected": "Vérifier la disponibilité du samedi soir sans présumer d’incompatibilité"
+    },
+    {
+      "input": "La tenue est fournie ?",
+      "expected": "Ne pas inventer la tenue; renvoyer au recruteur"
+    },
+    {
+      "input": "Oui j’ai une question",
+      "expected": "Répondre «Bien sûr, je vous écoute» et attendre la question"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 6,
+  "guide": {
+    "opening": "Une seule fois : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de [titre]. [première question]». Pas de détails mission, pas de «êtes-vous prêt».",
+    "sequence": "Conversation souple : expérience > disponibilité > horaires > rémunération > questions candidat. Les questions candidates ont toujours priorité.",
+    "acknowledgments": "1 phrase contextuelle maximum, puis une question utile.",
+    "interruption": "Répondre d’abord, attendre une réponse si nécessaire, puis reprendre.",
+    "unknown": "Dire «Je n’ai pas cette information, le recruteur pourra vous le confirmer».",
+    "closure": "Après questions candidat et accord explicite ou fin demandée."
+  }
+}

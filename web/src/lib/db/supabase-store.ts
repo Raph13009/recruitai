@@ -19,6 +19,7 @@ import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/
 import { AI_DISCLOSURE_TEMPLATE, DEFAULT_PERSONA } from "@/lib/interview/prompt";
 import { buildReport } from "@/lib/interview/report";
 import { getDemoJobFacts, type JobFacts } from "@/lib/job";
+import { requireScenario, scenarioResourceIds, scenarioToJobFacts } from "@/lib/scenarios";
 
 const now = () => new Date().toISOString();
 const newToken = () => randomBytes(18).toString("base64url");
@@ -196,26 +197,39 @@ export async function setJobStatus(agencyId: string, id: string, status: JobStat
   ) as Job | null;
 }
 
-/** The job behind the public "try it" page: the demo agency's demo job (created if missing). */
-export async function publicDemoJob(): Promise<Job | null> {
-  const open = check(
-    await sb().from("jobs").select("*").eq("agency_id", DEMO_IDS.agency).eq("status", "open").order("created_at"),
-  ) as Job[];
-  const found = open.find((j) => j.id === DEMO_IDS.job) ?? open[0];
-  if (found) return found;
+/** Upserts a demo-agency job from a scenario pack entry (or the legacy demo job). */
+export async function ensureDemoScenarioJob(scenarioId?: string | null): Promise<Job | null> {
   await ensureDemoAgency();
-  const facts = getDemoJobFacts();
+  const scenario = scenarioId ? requireScenario(scenarioId) : null;
+  const ids = scenario ? scenarioResourceIds(scenario.id) : { job: DEMO_IDS.job, config: DEMO_IDS.config };
+  const facts: JobFacts = scenario ? scenarioToJobFacts(scenario) : getDemoJobFacts();
   const t = now();
   const { error } = await sb().from("jobs").upsert({
-    id: DEMO_IDS.job, agency_id: DEMO_IDS.agency, title: facts.job_title, location: facts.location,
-    status: "open", facts, created_at: t, updated_at: t,
+    id: ids.job,
+    agency_id: DEMO_IDS.agency,
+    title: facts.job_title,
+    location: facts.location,
+    status: "open",
+    facts,
+    created_at: t,
+    updated_at: t,
   });
   if (error) throw new Error(error.message);
   await sb().from("interview_configs").upsert({
-    id: DEMO_IDS.config, agency_id: DEMO_IDS.agency, job_id: DEMO_IDS.job, language: "fr",
-    voice: env.geminiVoice(), ai_disclosure: AI_DISCLOSURE_TEMPLATE, created_at: t,
+    id: ids.config,
+    agency_id: DEMO_IDS.agency,
+    job_id: ids.job,
+    language: "fr",
+    voice: env.geminiVoice(),
+    ai_disclosure: AI_DISCLOSURE_TEMPLATE,
+    created_at: t,
   });
-  return getJob(DEMO_IDS.agency, DEMO_IDS.job);
+  return getJob(DEMO_IDS.agency, ids.job);
+}
+
+/** The job behind the public "try it" page: the demo agency's demo job (created if missing). */
+export async function publicDemoJob(): Promise<Job | null> {
+  return ensureDemoScenarioJob(null);
 }
 
 // ---------------------------------------------------------------------------
@@ -242,9 +256,9 @@ export async function createSession(agencyId: string, input: { jobId: string; ca
   return insertSession(job, input.candidateLabel);
 }
 
-export async function createPublicDemoSession(): Promise<InterviewSession | null> {
-  const job = await publicDemoJob();
-  return job ? insertSession(job, "Essai public") : null;
+export async function createPublicDemoSession(scenarioId?: string | null): Promise<InterviewSession | null> {
+  const job = await ensureDemoScenarioJob(scenarioId);
+  return job ? insertSession(job, scenarioId ? `Essai · ${requireScenario(scenarioId).name}` : "Essai public") : null;
 }
 
 export async function listSessions(agencyId: string, filter: { jobId?: string } = {}): Promise<InterviewSession[]> {
