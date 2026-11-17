@@ -4,7 +4,14 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 import { text, type FormState } from "@/app/actions/form-state";
 import { requireRecruiter } from "@/lib/auth/dal";
-import { updateAgency, updateInterviewer } from "@/lib/db";
+import { isAccentColor } from "@/lib/branding";
+import {
+  assertBrandingImage,
+  removeAgencyAsset,
+  uploadAgencyAsset,
+  type BrandingKind,
+} from "@/lib/branding/storage";
+import { getAgency, updateAgency, updateAgencyBranding, updateInterviewer } from "@/lib/db";
 
 const interviewerSchema = z.object({
   persona_name: z.string().min(1, "Donnez un prénom à l'intervieweur.").max(30),
@@ -55,4 +62,52 @@ export async function saveAgency(_previous: FormState, formData: FormData): Prom
   await updateAgency(recruiter.agency.id, parsed.data);
   refresh();
   return { ok: true, values };
+}
+
+const BRANDING_FIELDS = [
+  { kind: "logo", url: "logo_url" },
+  { kind: "banner", url: "banner_url" },
+] as const satisfies readonly { kind: BrandingKind; url: "logo_url" | "banner_url" }[];
+
+/** Agency branding shown to candidates: accent color, logo and banner. */
+export async function saveBranding(_previous: FormState, formData: FormData): Promise<FormState> {
+  const recruiter = await requireRecruiter();
+  const agencyId = recruiter.agency.id;
+  const accent = text(formData, "accent_color");
+  if (!isAccentColor(accent)) {
+    return { fieldErrors: { accent_color: "Choisissez une couleur #RRGGBB." }, error: "Certains réglages sont à corriger." };
+  }
+
+  const current = await getAgency(agencyId);
+  if (!current) return { error: "Agence introuvable." };
+
+  // Validate every file before touching storage.
+  const uploads: { kind: BrandingKind; url: "logo_url" | "banner_url"; file: File }[] = [];
+  const removals: typeof BRANDING_FIELDS[number][] = [];
+  const fieldErrors: Record<string, string> = {};
+  for (const field of BRANDING_FIELDS) {
+    const file = formData.get(field.kind);
+    if (file instanceof File && file.size > 0) {
+      const problem = assertBrandingImage(file, field.kind);
+      if (problem) fieldErrors[field.kind] = problem;
+      else uploads.push({ ...field, file });
+    } else if (formData.get(`remove_${field.kind}`) === "1") {
+      removals.push(field);
+    }
+  }
+  if (Object.keys(fieldErrors).length) return { fieldErrors, error: "Certains réglages sont à corriger." };
+
+  const next = { ...current.branding, accent_color: accent };
+  try {
+    for (const { kind, url, file } of uploads) next[url] = await uploadAgencyAsset(agencyId, kind, file);
+    for (const { kind, url } of removals) {
+      await removeAgencyAsset(agencyId, kind);
+      next[url] = null;
+    }
+  } catch {
+    return { error: "Impossible d'enregistrer les images. Réessayez." };
+  }
+  await updateAgencyBranding(agencyId, next);
+  refresh();
+  return { ok: true };
 }
