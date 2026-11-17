@@ -5,6 +5,7 @@ import {
   CaptionsIcon, CaptionsOffIcon, CheckIcon, KeyboardIcon, Loader2Icon, MicIcon, MicOffIcon, PhoneOffIcon,
   RotateCcwIcon, SendIcon, VideoIcon, VideoOffIcon, Volume2Icon, XIcon,
 } from "lucide-react";
+import { AgencyBrandHeader } from "@/components/interview/agency-brand-header";
 import { Presence } from "@/components/interview/presence";
 import { SelfView } from "@/components/interview/self-view";
 import { Waveform } from "@/components/brand";
@@ -34,6 +35,8 @@ export interface CallRoomProps {
   phase: CallPhase;
   persona: string;
   agency: string;
+  /** The agency's logo, shown instead of the product mark. */
+  logoUrl: string | null;
   jobTitle: string;
   demo: boolean;
   /** Receives the avatar stream. */
@@ -62,7 +65,7 @@ export interface CallRoomProps {
 
 /** The video-call screen, on Raphaël's paper. Only the avatar's video sits on an ink tile. */
 export function CallRoom({
-  visible, phase, persona, agency, jobTitle, demo, videoRef, videoActive, agentSpeaking, candidateSpeaking,
+  visible, phase, persona, agency, logoUrl, jobTitle, demo, videoRef, videoActive, agentSpeaking, candidateSpeaking,
   getAgentLevel, caption, progress, notice, error, startedAt, micMuted, typedReplies, cameraStream, onToggleMic,
   onToggleCamera, onSendText, onDismissNotice, onStartSpeaking, onRetry, onLeave,
 }: CallRoomProps) {
@@ -86,9 +89,13 @@ export function CallRoom({
       aria-hidden={!visible}
     >
       <header className="flex items-center gap-3 px-4 py-3 sm:px-6">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
-          <Waveform className="h-3.5 gap-[2px] [&>span]:w-[2px]" />
-        </span>
+        {logoUrl ? (
+          <AgencyBrandHeader name={agency} logoUrl={logoUrl} className="shrink-0" />
+        ) : (
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
+            <Waveform className="h-3.5 gap-[2px] [&>span]:w-[2px]" />
+          </span>
+        )}
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{jobTitle}</p>
           <p className="truncate text-xs text-muted-foreground">{agency}</p>

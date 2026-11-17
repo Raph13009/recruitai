@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon } from "lucide-react";
-import { Brand } from "@/components/brand";
+import { AgencyBrandHeader } from "@/components/interview/agency-brand-header";
 import { CallRoom, type CallPhase, type Caption } from "@/components/interview/call-room";
 import { useCamera, useMicCheck } from "@/components/interview/devices";
 import { Lobby } from "@/components/interview/lobby";
+import { AgencyBanner } from "@/components/recruiter/agency-banner";
 import { postJson, type EngineHandlers, type InterviewEngine } from "@/lib/client/engine";
 import { startInterview } from "@/lib/client/start-interview";
 import type { CandidateSessionPayload, EndReason } from "@/lib/db/types";
@@ -19,7 +20,7 @@ const CAPTION_LINGER_MS = 7000;
 
 /** The candidate's whole journey on an interview link: waiting room, video call, goodbye. */
 export function InterviewFlow({ payload }: { payload: CandidateSessionPayload }) {
-  const { token, experience } = payload;
+  const { token, experience, branding } = payload;
   const alreadyDone = payload.status === "completed";
 
   const [step, setStep] = useState<Step>(alreadyDone ? "done" : "lobby");
@@ -218,12 +219,15 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
 
   const finished = step === "done";
 
+  // The agency's accent recolours the buttons, focus rings and highlights of the whole journey.
+  const accent = { "--agency-accent": branding.accent_color, "--primary": branding.accent_color, "--brand": branding.accent_color, "--ring": branding.accent_color } as React.CSSProperties;
+
   return (
-    <>
+    <div style={accent}>
       {step !== "call" && (
         <header className="flex items-center px-4 py-4 sm:px-6">
           {/* Clickable only when finished — leaving mid-interview would end the session by mistake. */}
-          <Brand href={finished ? "/" : null} />
+          <AgencyBrandHeader name={payload.agency} logoUrl={branding.logo_url} href={finished ? "/" : null} />
         </header>
       )}
 
@@ -232,7 +236,7 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
       )}
 
       {finished && (
-        <Goodbye agency={payload.agency} reason={alreadyDone ? "already" : (endReason ?? "completed")} />
+        <Goodbye agency={payload.agency} bannerUrl={branding.banner_url} reason={alreadyDone ? "already" : (endReason ?? "completed")} />
       )}
 
       {!finished && (
@@ -241,6 +245,7 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
           phase={phase}
           persona={experience.persona_name}
           agency={payload.agency}
+          logoUrl={branding.logo_url}
           jobTitle={payload.job.title}
           demo={experience.engine === "demo"}
           videoRef={videoRef}
@@ -265,11 +270,11 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
           onLeave={leave}
         />
       )}
-    </>
+    </div>
   );
 }
 
-function Goodbye({ agency, reason }: { agency: string; reason: EndReason | "already" }) {
+function Goodbye({ agency, bannerUrl, reason }: { agency: string; bannerUrl: string | null; reason: EndReason | "already" }) {
   const title =
     reason === "already"
       ? "Cet entretien est déjà terminé."
@@ -278,6 +283,7 @@ function Goodbye({ agency, reason }: { agency: string; reason: EndReason | "alre
         : "Merci, l’entretien est terminé.";
   return (
     <section className="mx-auto flex min-h-[calc(100svh-4.5rem)] w-full max-w-xl flex-col items-center justify-center px-6 pb-16 text-center motion-safe:animate-rise">
+      <AgencyBanner url={bannerUrl} className="mb-8 rounded-2xl md:h-28" />
       <span className="grid size-14 place-items-center rounded-full bg-accent text-accent-foreground">
         <CheckIcon className="size-6" />
       </span>

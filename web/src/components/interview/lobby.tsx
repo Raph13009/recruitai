@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { LevelMeter, SelfView } from "@/components/interview/self-view";
 import type { MicState } from "@/components/interview/devices";
+import { AgencyBanner } from "@/components/recruiter/agency-banner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CandidateSessionPayload } from "@/lib/db/types";
@@ -40,6 +41,7 @@ export function Lobby({
   return (
     <div className="flex min-h-[calc(100svh-4.5rem)] flex-col items-center justify-center px-4 pb-10 sm:px-6">
       <div className="flex w-full max-w-2xl flex-col gap-6">
+        <AgencyBanner url={payload.branding.banner_url} className="rounded-2xl md:h-28" />
         <div>
           <p className="text-sm text-muted-foreground">{payload.agency}</p>
           <h1 className="display mt-1 text-2xl font-semibold leading-tight [overflow-wrap:anywhere] sm:text-3xl">
