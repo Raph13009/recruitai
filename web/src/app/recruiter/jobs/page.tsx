@@ -7,13 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { canManageJobs } from "@/lib/auth/permissions";
 import { requireRecruiter } from "@/lib/auth/dal";
 import { getDashboard } from "@/lib/db";
 import { formatDateTime, formatEur } from "@/lib/format";
 
 export const metadata = { title: "Postes" };
 
-export default function JobsPage() {
+export default async function JobsPage() {
+  const recruiter = await requireRecruiter();
+  const manageJobs = canManageJobs(recruiter.role);
   return (
     <>
       <PageHeader crumbs={[{ label: "Postes" }]} />
@@ -22,22 +25,24 @@ export default function JobsPage() {
           title="Postes"
           description="Chaque fiche est la seule source d’information de l’intervieweur IA."
           actions={
-            <Button asChild>
-              <Link href="/recruiter/jobs/new">
-                <PlusIcon /> Nouveau poste
-              </Link>
-            </Button>
+            manageJobs ? (
+              <Button asChild>
+                <Link href="/recruiter/jobs/new">
+                  <PlusIcon /> Nouveau poste
+                </Link>
+              </Button>
+            ) : undefined
           }
         />
         <Suspense fallback={<PageSkeleton />}>
-          <Jobs />
+          <Jobs manageJobs={manageJobs} />
         </Suspense>
       </PageBody>
     </>
   );
 }
 
-async function Jobs() {
+async function Jobs({ manageJobs }: { manageJobs: boolean }) {
   const recruiter = await requireRecruiter();
   const { jobs } = await getDashboard(recruiter.agency.id);
 
@@ -49,13 +54,19 @@ async function Jobs() {
             <BriefcaseIcon />
           </EmptyMedia>
           <EmptyTitle>Aucun poste</EmptyTitle>
-          <EmptyDescription>Créez une première fiche : lieu, horaires, salaire, tâches.</EmptyDescription>
+          <EmptyDescription>
+            {manageJobs
+              ? "Créez une première fiche : lieu, horaires, salaire, tâches."
+              : "Aucun poste pour le moment. Demandez à un owner d’en créer un."}
+          </EmptyDescription>
         </EmptyHeader>
-        <EmptyContent>
-          <Button asChild>
-            <Link href="/recruiter/jobs/new">Créer un poste</Link>
-          </Button>
-        </EmptyContent>
+        {manageJobs && (
+          <EmptyContent>
+            <Button asChild>
+              <Link href="/recruiter/jobs/new">Créer un poste</Link>
+            </Button>
+          </EmptyContent>
+        )}
       </Empty>
     );
   }

@@ -12,8 +12,11 @@ import { createAvatarSessionToken, type AvatarSessionInfo } from "@/lib/liveavat
 // is configured, a LiveAvatar session token (the interviewer's face). No long-lived key ever leaves
 // the server.
 
-/** Reconnections allowed per interview link. Each start can mint credits-consuming sessions. */
-const MAX_LIVE_STARTS = 5;
+/**
+ * Technical reconnects while the interview is still in progress (refresh / network drop).
+ * A completed interview cannot restart: that is the single-use rule.
+ */
+const MAX_RECONNECTS = 3;
 
 const bodySchema = z.object({ video: z.boolean().optional() });
 
@@ -22,9 +25,17 @@ export async function POST(req: Request, ctx: RouteContext<"/api/sessions/[token
   const found = await getSessionContext(token);
   if (!found) return fail("Lien d'entretien invalide.", 404);
   const { session, brief, agency } = found;
-  if (session.status === "completed") return fail("Entretien déjà terminé.", 409);
-  if (session.live_starts >= MAX_LIVE_STARTS) {
-    return fail("Trop de tentatives de connexion pour cet entretien. Demandez un nouveau lien à l'agence.", 429);
+  if (session.status === "completed") {
+    return fail(
+      session.end_reason === "left"
+        ? "Cet entretien a été interrompu et ne peut plus être repris. Demandez une nouvelle invitation à l'agence."
+        : "Cet entretien est déjà terminé. Chaque invitation ne permet qu'une seule tentative.",
+      409,
+    );
+  }
+  // First start is free; further live_starts are reconnects of an in-progress interview.
+  if (session.status === "in_progress" && session.live_starts >= MAX_RECONNECTS) {
+    return fail("Trop de reconnexions pour cet entretien. Demandez un nouveau lien à l'agence.", 429);
   }
 
   const body = await readJson(req, bodySchema);

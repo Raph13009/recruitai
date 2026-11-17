@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { canManageJobs } from "@/lib/auth/permissions";
 import { requireRecruiter } from "@/lib/auth/dal";
 import { getJob, jobBrief, listSessions } from "@/lib/db";
 import { formatEur } from "@/lib/format";
@@ -38,6 +39,7 @@ async function JobDetail({ params }: Pick<PageProps<"/recruiter/jobs/[id]">, "pa
   const brief = jobBrief(job);
   const sessions = await listSessions(recruiter.agency.id, { jobId: job.id });
   const open = job.status === "open";
+  const manageJobs = canManageJobs(recruiter.role);
 
   const facts: [string, string][] = [
     ["Lieu", brief.location],
@@ -61,21 +63,23 @@ async function JobDetail({ params }: Pick<PageProps<"/recruiter/jobs/[id]">, "pa
           </span>
         }
         actions={
-          <>
-            <Button asChild variant="outline">
-              <Link href={`/recruiter/jobs/${job.id}/edit`}>
-                <PencilIcon /> Modifier
-              </Link>
-            </Button>
-            <form action={changeJobStatus}>
-              <input type="hidden" name="id" value={job.id} />
-              <input type="hidden" name="status" value={open ? "closed" : "open"} />
-              <Button type="submit" variant={open ? "outline" : "default"}>
-                {open ? <LockIcon /> : <UnlockIcon />}
-                {open ? "Fermer le poste" : "Ouvrir le poste"}
+          manageJobs ? (
+            <>
+              <Button asChild variant="outline">
+                <Link href={`/recruiter/jobs/${job.id}/edit`}>
+                  <PencilIcon /> Modifier
+                </Link>
               </Button>
-            </form>
-          </>
+              <form action={changeJobStatus}>
+                <input type="hidden" name="id" value={job.id} />
+                <input type="hidden" name="status" value={open ? "closed" : "open"} />
+                <Button type="submit" variant={open ? "outline" : "default"}>
+                  {open ? <LockIcon /> : <UnlockIcon />}
+                  {open ? "Fermer le poste" : "Ouvrir le poste"}
+                </Button>
+              </form>
+            </>
+          ) : undefined
         }
       />
 
@@ -83,9 +87,9 @@ async function JobDetail({ params }: Pick<PageProps<"/recruiter/jobs/[id]">, "pa
         <div className="space-y-6">
           <Card id="inviter" className="scroll-mt-20">
             <CardHeader>
-              <CardTitle className="text-lg">Inviter un candidat</CardTitle>
+              <CardTitle className="text-lg">Envoyer une invitation</CardTitle>
               <CardDescription>
-                Chaque candidat reçoit son propre lien. Il passe l’entretien quand il veut, en visio, depuis son téléphone ou son ordinateur.
+                Un e-mail avec un lien unique. Une seule tentative par candidat.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -102,15 +106,16 @@ async function JobDetail({ params }: Pick<PageProps<"/recruiter/jobs/[id]">, "pa
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Entretiens pour ce poste</CardTitle>
+              <CardTitle className="text-lg">Entretiens</CardTitle>
               <CardDescription>
-                {sessions.length} entretien{sessions.length > 1 ? "s" : ""}, dont {sessions.filter((s) => s.status === "completed").length} terminé
-                {sessions.filter((s) => s.status === "completed").length > 1 ? "s" : ""}.
+                {sessions.length} invitation{sessions.length > 1 ? "s" : ""} ·{" "}
+                {sessions.filter((s) => s.status === "completed" && s.end_reason !== "left").length} terminé
+                {sessions.filter((s) => s.status === "completed" && s.end_reason !== "left").length > 1 ? "s" : ""}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {sessions.length ? (
-                <SessionsTable sessions={sessions} />
+                <SessionsTable sessions={sessions} showEmail />
               ) : (
                 <Empty className="p-4">
                   <EmptyHeader>
@@ -118,7 +123,7 @@ async function JobDetail({ params }: Pick<PageProps<"/recruiter/jobs/[id]">, "pa
                       <MessagesSquareIcon />
                     </EmptyMedia>
                     <EmptyTitle>Aucun entretien</EmptyTitle>
-                    <EmptyDescription>Créez un lien ci-dessus et envoyez-le à un candidat.</EmptyDescription>
+                    <EmptyDescription>Envoyez une invitation ci-dessus pour démarrer.</EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               )}

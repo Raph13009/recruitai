@@ -18,7 +18,7 @@ const FILTERS: { id: string; label: string; match: (s: InterviewSession) => bool
   { id: "termines", label: "Terminés", match: (s) => s.status === "completed" && s.end_reason !== "left" },
   { id: "interrompus", label: "Interrompus", match: (s) => s.status === "completed" && s.end_reason === "left" },
   { id: "en-cours", label: "En cours", match: (s) => s.status === "in_progress" },
-  { id: "en-attente", label: "En attente", match: (s) => s.status === "created" },
+  { id: "invites", label: "Invités", match: (s) => s.status === "created" },
 ];
 
 export default function SessionsPage({ searchParams }: PageProps<"/recruiter/sessions">) {

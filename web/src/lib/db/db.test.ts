@@ -15,8 +15,9 @@ const T0 = "2026-11-17T09:00:00.000Z";
 function session(patch: Partial<InterviewSession> = {}): InterviewSession {
   return {
     id: "s1", agency_id: "a1", job_id: "j1", interview_config_id: "c1", token: "tok-1",
-    candidate_label: "Candidat test", is_synthetic: true, status: "created", mode: null, engine: null,
-    end_reason: null, live_starts: 0, memory: emptyMemory(), created_at: T0, started_at: null, completed_at: null,
+    candidate_label: "Candidat test", candidate_email: null, invited_at: null, is_synthetic: true,
+    status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
+    created_at: T0, started_at: null, completed_at: null,
     ...patch,
   };
 }
@@ -90,8 +91,21 @@ describe("shared store helpers", () => {
   });
 
   it("fills columns that older rows do not have", () => {
-    const old = { ...session(), engine: undefined, end_reason: undefined, live_starts: undefined } as unknown as InterviewSession;
-    expect(normalizeSession(old)).toMatchObject({ engine: null, end_reason: null, live_starts: 0 });
+    const old = {
+      ...session(),
+      candidate_email: undefined,
+      invited_at: undefined,
+      engine: undefined,
+      end_reason: undefined,
+      live_starts: undefined,
+    } as unknown as InterviewSession;
+    expect(normalizeSession(old)).toMatchObject({
+      candidate_email: null,
+      invited_at: null,
+      engine: null,
+      end_reason: null,
+      live_starts: 0,
+    });
     const agency = withInterviewer({ id: "a1", name: "Agence", created_at: T0, interviewer: null });
     expect(agency.interviewer.persona_name).toBeTruthy();
     expect(agency.interviewer.video_enabled).toBe(true);

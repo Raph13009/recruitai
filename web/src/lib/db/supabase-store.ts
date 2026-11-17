@@ -7,20 +7,21 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { defaultBranding } from "@/lib/branding";
 import { supabaseAdmin, supabaseAuthClient } from "@/lib/db/client";
+import { withRole } from "@/lib/auth/permissions";
 import {
   DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, normalizeSession,
   type SessionContext,
 } from "@/lib/db/helpers";
 import type {
-  Agency, AgencyBranding, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession, InterviewerSettings, Job,
-  JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
+  Agency, AgencyBranding, AgencyInvite, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode,
+  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/lib/interview/memory";
 import { AI_DISCLOSURE_TEMPLATE, DEFAULT_PERSONA } from "@/lib/interview/prompt";
 import { buildReport } from "@/lib/interview/report";
 import { getDemoJobFacts, type JobFacts } from "@/lib/job";
-import { requireScenario, scenarioResourceIds, scenarioToJobFacts } from "@/lib/scenarios";
+import { requireScenario, scenarioResourceIds, scenarioToJobFacts, starterJobFacts } from "@/lib/scenarios";
 
 const now = () => new Date().toISOString();
 const newToken = () => randomBytes(18).toString("base64url");
@@ -33,18 +34,21 @@ function check<T>(result: { data: T; error: { message: string } | null }): T {
 
 const asAgency = (row: unknown) => normalizeAgency(row as Agency);
 const asSession = (row: unknown) => normalizeSession(row as InterviewSession);
+const asRecruiter = (row: Recruiter): Recruiter => ({ ...row, role: withRole(row.role) });
+const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 // ---------------------------------------------------------------------------
 // Accounts and agencies
 // ---------------------------------------------------------------------------
 
 export async function getRecruiter(id: string): Promise<Recruiter | null> {
-  return check(await sb().from("recruiters").select("*").eq("id", id).maybeSingle()) as Recruiter | null;
+  const row = check(await sb().from("recruiters").select("*").eq("id", id).maybeSingle()) as Recruiter | null;
+  return row ? asRecruiter(row) : null;
 }
 
 async function recruiterByEmail(email: string): Promise<Recruiter | null> {
   const rows = check(await sb().from("recruiters").select("*").ilike("email", email.trim()).limit(1)) as Recruiter[];
-  return rows[0] ?? null;
+  return rows[0] ? asRecruiter(rows[0]) : null;
 }
 
 /** Password check by Supabase Auth, then the recruiter row (absent row = not a recruiter). */
@@ -84,9 +88,14 @@ export async function demoRecruiter(): Promise<Recruiter | null> {
     userId = data.user.id;
   }
   const row: Recruiter = {
-    id: userId, agency_id: DEMO_IDS.agency, full_name: DEMO_ACCOUNT.name, email: DEMO_ACCOUNT.email, created_at: now(),
+    id: userId,
+    agency_id: DEMO_IDS.agency,
+    full_name: DEMO_ACCOUNT.name,
+    email: DEMO_ACCOUNT.email,
+    role: "owner",
+    created_at: now(),
   };
-  return check(await sb().from("recruiters").upsert(row).select("*").single()) as Recruiter;
+  return asRecruiter(check(await sb().from("recruiters").upsert(row).select("*").single()) as Recruiter);
 }
 
 export async function getAgency(id: string): Promise<Agency | null> {
@@ -106,22 +115,196 @@ export async function createAgencyWithRecruiter(input: {
   }
   const userId = data.user.id;
   const agencyId = randomUUID();
+  const agencyName = input.agencyName.trim();
   try {
     const t = now();
-    check(await sb().from("agencies").insert({ id: agencyId, name: input.agencyName.trim(), interviewer: defaultInterviewer(), created_at: t }));
-    return check(
-      await sb()
-        .from("recruiters")
-        .insert({ id: userId, agency_id: agencyId, full_name: input.fullName.trim(), email, created_at: t })
-        .select("*")
-        .single(),
-    ) as Recruiter;
+    check(await sb().from("agencies").insert({ id: agencyId, name: agencyName, interviewer: defaultInterviewer(), created_at: t }));
+    const recruiter = asRecruiter(
+      check(
+        await sb()
+          .from("recruiters")
+          .insert({
+            id: userId,
+            agency_id: agencyId,
+            full_name: input.fullName.trim(),
+            email,
+            role: "owner",
+            created_at: t,
+          })
+          .select("*")
+          .single(),
+      ) as Recruiter,
+    );
+    await seedStarterJobs(agencyId, agencyName);
+    return recruiter;
   } catch (err) {
     // Leave nothing half-created behind.
     await sb().from("agencies").delete().eq("id", agencyId);
     await sb().auth.admin.deleteUser(userId);
     throw err;
   }
+}
+
+/** Fills an empty agency with the five demo scenario posts. No-op when jobs already exist. */
+export async function ensureStarterJobs(agencyId: string): Promise<void> {
+  if ((await listJobs(agencyId)).length > 0) return;
+  const agency = await getAgency(agencyId);
+  if (!agency) return;
+  await seedStarterJobs(agency.id, agency.name);
+}
+
+async function seedStarterJobs(agencyId: string, agencyName: string): Promise<void> {
+  for (const facts of starterJobFacts(agencyName)) {
+    await upsertJob(agencyId, { facts, status: "open" });
+  }
+}
+
+export async function listAgencyRecruiters(agencyId: string): Promise<Recruiter[]> {
+  const rows = check(
+    await sb().from("recruiters").select("*").eq("agency_id", agencyId).order("full_name"),
+  ) as Recruiter[];
+  return rows.map(asRecruiter);
+}
+
+export async function listAgencyInvites(agencyId: string): Promise<AgencyInvite[]> {
+  return check(
+    await sb()
+      .from("agency_invites")
+      .select("*")
+      .eq("agency_id", agencyId)
+      .is("accepted_at", null)
+      .order("created_at", { ascending: false }),
+  ) as AgencyInvite[];
+}
+
+export async function getAgencyInviteByToken(token: string): Promise<(AgencyInvite & { agency_name: string }) | null> {
+  const invite = check(
+    await sb().from("agency_invites").select("*").eq("token", token).maybeSingle(),
+  ) as AgencyInvite | null;
+  if (!invite || invite.accepted_at) return null;
+  if (Date.parse(invite.expires_at) < Date.now()) return null;
+  const agency = await getAgency(invite.agency_id);
+  if (!agency) return null;
+  return { ...invite, agency_name: agency.name };
+}
+
+export async function createAgencyInvite(input: {
+  agencyId: string;
+  email: string;
+  invitedBy: string;
+}): Promise<AgencyInvite | null> {
+  const email = input.email.trim().toLowerCase();
+  // One email = one recruiter account globally (Auth uniqueness).
+  if (await recruiterByEmail(email)) return null;
+
+  const pending = check(
+    await sb()
+      .from("agency_invites")
+      .select("*")
+      .eq("agency_id", input.agencyId)
+      .ilike("email", email)
+      .is("accepted_at", null)
+      .maybeSingle(),
+  ) as AgencyInvite | null;
+
+  const t = now();
+  const expires_at = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+  const token = newToken();
+
+  if (pending) {
+    return check(
+      await sb()
+        .from("agency_invites")
+        .update({ token, invited_by: input.invitedBy, created_at: t, expires_at })
+        .eq("id", pending.id)
+        .select("*")
+        .single(),
+    ) as AgencyInvite;
+  }
+
+  return check(
+    await sb()
+      .from("agency_invites")
+      .insert({
+        agency_id: input.agencyId,
+        email,
+        role: "member",
+        token,
+        invited_by: input.invitedBy,
+        created_at: t,
+        expires_at,
+        accepted_at: null,
+      })
+      .select("*")
+      .single(),
+  ) as AgencyInvite;
+}
+
+export async function acceptAgencyInvite(input: {
+  token: string;
+  fullName: string;
+  password: string;
+}): Promise<Recruiter | null> {
+  const invite = await getAgencyInviteByToken(input.token);
+  if (!invite) return null;
+  if (await recruiterByEmail(invite.email)) return null;
+
+  const { data, error } = await sb().auth.admin.createUser({
+    email: invite.email,
+    password: input.password,
+    email_confirm: true,
+  });
+  if (error || !data.user) {
+    if (/already|registered|exists/i.test(error?.message ?? "")) return null;
+    throw new Error(error?.message ?? "Création du compte impossible.");
+  }
+
+  const userId = data.user.id;
+  const t = now();
+  try {
+    const recruiter = asRecruiter(
+      check(
+        await sb()
+          .from("recruiters")
+          .insert({
+            id: userId,
+            agency_id: invite.agency_id,
+            full_name: input.fullName.trim(),
+            email: invite.email,
+            role: "member",
+            created_at: t,
+          })
+          .select("*")
+          .single(),
+      ) as Recruiter,
+    );
+    check(
+      await sb()
+        .from("agency_invites")
+        .update({ accepted_at: t })
+        .eq("id", invite.id)
+        .eq("token", input.token)
+        .select("id")
+        .single(),
+    );
+    return recruiter;
+  } catch (err) {
+    await sb().auth.admin.deleteUser(userId);
+    throw err;
+  }
+}
+
+export async function revokeAgencyInvite(agencyId: string, inviteId: string): Promise<boolean> {
+  const rows = check(
+    await sb()
+      .from("agency_invites")
+      .delete()
+      .eq("id", inviteId)
+      .eq("agency_id", agencyId)
+      .is("accepted_at", null)
+      .select("id"),
+  ) as { id: string }[];
+  return rows.length > 0;
 }
 
 export async function updateAgency(agencyId: string, patch: { name: string }): Promise<Agency | null> {
@@ -243,29 +426,45 @@ export async function publicDemoJob(): Promise<Job | null> {
 // Interviews, recruiter side (scoped by agency)
 // ---------------------------------------------------------------------------
 
-async function insertSession(job: Job, label: string | undefined): Promise<InterviewSession | null> {
+async function insertSession(
+  job: Job,
+  input: { label?: string; email?: string | null; invited?: boolean } = {},
+): Promise<InterviewSession | null> {
   const config = check(
     await sb().from("interview_configs").select("id").eq("job_id", job.id).limit(1).maybeSingle(),
   ) as { id: string } | null;
   if (!config) return null;
+  const email = input.email?.trim().toLowerCase() || null;
+  const label = input.label?.trim() || email || "Candidat anonyme";
+  const t = now();
   const session: InterviewSession = {
     id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
-    token: newToken(), candidate_label: label?.trim() || "Candidat anonyme", is_synthetic: false,
+    token: newToken(), candidate_label: label, candidate_email: email,
+    invited_at: input.invited ? t : null, is_synthetic: false,
     status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
-    created_at: now(), started_at: null, completed_at: null,
+    created_at: t, started_at: null, completed_at: null,
   };
   return asSession(check(await sb().from("sessions").insert(session).select("*").single()));
 }
 
-export async function createSession(agencyId: string, input: { jobId: string; candidateLabel?: string }): Promise<InterviewSession | null> {
+export async function createSession(
+  agencyId: string,
+  input: { jobId: string; candidateEmail?: string; candidateLabel?: string },
+): Promise<InterviewSession | null> {
   const job = await getJob(agencyId, input.jobId);
   if (!job || job.status !== "open") return null;
-  return insertSession(job, input.candidateLabel);
+  return insertSession(job, {
+    label: input.candidateLabel,
+    email: input.candidateEmail,
+    invited: Boolean(input.candidateEmail),
+  });
 }
 
 export async function createPublicDemoSession(scenarioId?: string | null): Promise<InterviewSession | null> {
   const job = await ensureDemoScenarioJob(scenarioId);
-  return job ? insertSession(job, scenarioId ? `Essai · ${requireScenario(scenarioId).name}` : "Essai public") : null;
+  return job
+    ? insertSession(job, { label: scenarioId ? `Essai · ${requireScenario(scenarioId).name}` : "Essai public" })
+    : null;
 }
 
 export async function listSessions(agencyId: string, filter: { jobId?: string } = {}): Promise<InterviewSession[]> {

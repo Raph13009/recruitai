@@ -35,12 +35,29 @@ export interface Agency {
   created_at: Timestamp;
 }
 
+/** Owner runs the agency; member only sends interview links. */
+export type RecruiterRole = "owner" | "member";
+
 export interface Recruiter {
   id: Uuid; // = auth.users.id in Postgres (Supabase Auth holds the password)
   agency_id: Uuid;
   full_name: string;
   email: string;
+  role: RecruiterRole;
   created_at: Timestamp;
+}
+
+/** Pending or accepted invitation to join an agency as a recruiter. */
+export interface AgencyInvite {
+  id: Uuid;
+  agency_id: Uuid;
+  email: string;
+  role: "member";
+  token: string;
+  invited_by: Uuid;
+  created_at: Timestamp;
+  expires_at: Timestamp;
+  accepted_at: Timestamp | null;
 }
 
 export type JobStatus = "draft" | "open" | "closed";
@@ -80,6 +97,10 @@ export interface InterviewSession {
   interview_config_id: Uuid;
   token: string; // unguessable public link token
   candidate_label: string; // free label chosen by the recruiter; no sensitive data
+  /** Email used for the invitation (null for synthetic / legacy / public demo). */
+  candidate_email: string | null;
+  /** When the invitation email was created (null for synthetic / legacy). */
+  invited_at: Timestamp | null;
   is_synthetic: boolean;
   status: SessionStatus;
   mode: InterviewMode | null;
@@ -145,5 +166,6 @@ export interface CurrentRecruiter {
   id: Uuid;
   full_name: string;
   email: string;
+  role: RecruiterRole;
   agency: { id: Uuid; name: string; branding: AgencyBranding };
 }

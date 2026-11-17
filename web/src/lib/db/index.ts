@@ -26,9 +26,16 @@ export const demoRecruiter: StoreApi["demoRecruiter"] = (...a) => store().demoRe
 export const getRecruiter: StoreApi["getRecruiter"] = (...a) => store().getRecruiter(...a);
 export const getAgency: StoreApi["getAgency"] = (...a) => store().getAgency(...a);
 export const createAgencyWithRecruiter: StoreApi["createAgencyWithRecruiter"] = (...a) => store().createAgencyWithRecruiter(...a);
+export const listAgencyRecruiters: StoreApi["listAgencyRecruiters"] = (...a) => store().listAgencyRecruiters(...a);
+export const listAgencyInvites: StoreApi["listAgencyInvites"] = (...a) => store().listAgencyInvites(...a);
+export const getAgencyInviteByToken: StoreApi["getAgencyInviteByToken"] = (...a) => store().getAgencyInviteByToken(...a);
+export const createAgencyInvite: StoreApi["createAgencyInvite"] = (...a) => store().createAgencyInvite(...a);
+export const acceptAgencyInvite: StoreApi["acceptAgencyInvite"] = (...a) => store().acceptAgencyInvite(...a);
+export const revokeAgencyInvite: StoreApi["revokeAgencyInvite"] = (...a) => store().revokeAgencyInvite(...a);
 export const updateAgency: StoreApi["updateAgency"] = (...a) => store().updateAgency(...a);
 export const updateInterviewer: StoreApi["updateInterviewer"] = (...a) => store().updateInterviewer(...a);
 export const updateAgencyBranding: StoreApi["updateAgencyBranding"] = (...a) => store().updateAgencyBranding(...a);
+export const ensureStarterJobs: StoreApi["ensureStarterJobs"] = (...a) => store().ensureStarterJobs(...a);
 
 // Jobs
 export const listJobs: StoreApi["listJobs"] = (...a) => store().listJobs(...a);
@@ -47,6 +54,8 @@ export const getTranscript: StoreApi["getTranscript"] = (...a) => store().getTra
 export const getReport: StoreApi["getReport"] = (...a) => store().getReport(...a);
 
 export async function getDashboard(agencyId: string) {
+  // Existing empty accounts (and any race before signup seeding finishes) get the five demo posts.
+  await ensureStarterJobs(agencyId);
   const [jobs, sessions] = await Promise.all([listJobs(agencyId), listSessions(agencyId)]);
   return dashboardOf(jobs, sessions);
 }

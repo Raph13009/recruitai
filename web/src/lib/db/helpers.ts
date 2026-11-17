@@ -56,7 +56,14 @@ export function normalizeAgency(
 
 /** Sessions written before the MVP columns existed get neutral values. */
 export function normalizeSession(row: InterviewSession): InterviewSession {
-  return { ...row, engine: row.engine ?? null, end_reason: row.end_reason ?? null, live_starts: row.live_starts ?? 0 };
+  return {
+    ...row,
+    candidate_email: row.candidate_email ?? null,
+    invited_at: row.invited_at ?? null,
+    engine: row.engine ?? null,
+    end_reason: row.end_reason ?? null,
+    live_starts: row.live_starts ?? 0,
+  };
 }
 
 export function durationSeconds(session: Pick<InterviewSession, "started_at" | "completed_at">): number | null {

@@ -12,11 +12,14 @@ export function SessionsTable({
   sessions,
   jobTitles,
   compact = false,
+  showEmail = false,
 }: {
   sessions: InterviewSession[];
   jobTitles?: Map<string, string>;
   /** Fewer columns, for narrow cards. */
   compact?: boolean;
+  /** Show candidate email (job detail / invitations). */
+  showEmail?: boolean;
 }) {
   const wide = !compact;
   return (
@@ -24,11 +27,12 @@ export function SessionsTable({
       <TableHeader>
         <TableRow>
           <TableHead>Candidat</TableHead>
+          {showEmail && <TableHead className="hidden sm:table-cell">E-mail</TableHead>}
           {jobTitles && <TableHead className="hidden md:table-cell">Poste</TableHead>}
           <TableHead>Statut</TableHead>
           {wide && <TableHead className="hidden lg:table-cell">Format</TableHead>}
           {wide && <TableHead className="hidden sm:table-cell">Durée</TableHead>}
-          <TableHead className="hidden sm:table-cell">Créé le</TableHead>
+          <TableHead className="hidden sm:table-cell">{showEmail ? "Invité le" : "Créé le"}</TableHead>
           <TableHead className="w-10">
             <span className="sr-only">Ouvrir</span>
           </TableHead>
@@ -38,6 +42,7 @@ export function SessionsTable({
         {sessions.map((session) => {
           const href = `/recruiter/sessions/${session.id}`;
           const duration = durationSeconds(session);
+          const when = session.invited_at ?? session.created_at;
           return (
             <TableRow key={session.id}>
               <TableCell className="max-w-[14rem]">
@@ -50,6 +55,11 @@ export function SessionsTable({
                   </Badge>
                 )}
               </TableCell>
+              {showEmail && (
+                <TableCell className="hidden max-w-[16rem] truncate text-muted-foreground sm:table-cell">
+                  {session.candidate_email ?? "—"}
+                </TableCell>
+              )}
               {jobTitles && (
                 <TableCell className={`hidden truncate text-muted-foreground md:table-cell ${compact ? "max-w-[10rem]" : "max-w-[16rem]"}`}>
                   {jobTitles.get(session.job_id) ?? "—"}
@@ -69,7 +79,7 @@ export function SessionsTable({
                 </TableCell>
               )}
               <TableCell className="hidden whitespace-nowrap text-muted-foreground sm:table-cell">
-                {compact ? formatShortDate(session.created_at) : formatDateTime(session.created_at)}
+                {compact ? formatShortDate(when) : formatDateTime(when)}
               </TableCell>
               <TableCell>
                 <Link href={href} aria-label={`Ouvrir l'entretien de ${session.candidate_label}`} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">

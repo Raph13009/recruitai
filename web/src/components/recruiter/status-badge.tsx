@@ -11,7 +11,7 @@ const SESSION_STYLES: Record<SessionStatus | "left", string> = {
 
 export function sessionStatusLabel(status: SessionStatus, endReason?: EndReason | null): string {
   if (status === "completed") return endReason === "left" ? "Interrompu" : "Terminé";
-  return status === "in_progress" ? "En cours" : "En attente";
+  return status === "in_progress" ? "En cours" : "Invité";
 }
 
 export function SessionStatusBadge({ status, endReason }: { status: SessionStatus; endReason?: EndReason | null }) {

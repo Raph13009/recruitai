@@ -1,9 +1,11 @@
 import { JobForm } from "@/components/recruiter/job-form";
 import { PageBody, PageHeader, PageIntro } from "@/components/recruiter/page-header";
+import { requireOwner } from "@/lib/auth/dal";
 
 export const metadata = { title: "Nouveau poste" };
 
-export default function NewJobPage() {
+export default async function NewJobPage() {
+  await requireOwner();
   return (
     <>
       <PageHeader crumbs={[{ label: "Postes", href: "/recruiter/jobs" }, { label: "Nouveau poste" }]} />

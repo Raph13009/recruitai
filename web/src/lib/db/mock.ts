@@ -15,16 +15,17 @@ import {
   DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, type SessionContext,
 } from "@/lib/db/helpers";
 import { readDurableBag, writeDurableBag } from "@/lib/db/persist";
+import { withRole } from "@/lib/auth/permissions";
 import type {
-  Agency, AgencyBranding, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession,
-  InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
+  Agency, AgencyBranding, AgencyInvite, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode,
+  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/lib/interview/memory";
 import { AI_DISCLOSURE_TEMPLATE, DEFAULT_PERSONA } from "@/lib/interview/prompt";
 import { buildReport } from "@/lib/interview/report";
 import { getDemoJobFacts, toJobBrief, type JobFacts } from "@/lib/job";
-import { requireScenario, scenarioResourceIds, scenarioToJobFacts } from "@/lib/scenarios";
+import { requireScenario, scenarioResourceIds, scenarioToJobFacts, starterJobFacts } from "@/lib/scenarios";
 
 /** Credentials stay in this store; the rest of the app only ever sees `Recruiter`. */
 type StoredRecruiter = Recruiter & { password_hash: string };
@@ -32,6 +33,7 @@ type StoredRecruiter = Recruiter & { password_hash: string };
 interface Store {
   agencies: Agency[];
   recruiters: StoredRecruiter[];
+  agency_invites: AgencyInvite[];
   jobs: Job[];
   interview_configs: InterviewConfig[];
   sessions: InterviewSession[];
@@ -47,8 +49,14 @@ const now = () => new Date().toISOString();
 const newToken = () => randomBytes(18).toString("base64url");
 const clone = <T>(value: T): T => structuredClone(value);
 const publicRecruiter = (r: StoredRecruiter): Recruiter => ({
-  id: r.id, agency_id: r.agency_id, full_name: r.full_name, email: r.email, created_at: r.created_at,
+  id: r.id,
+  agency_id: r.agency_id,
+  full_name: r.full_name,
+  email: r.email,
+  role: withRole(r.role),
+  created_at: r.created_at,
 });
+const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 // ---------------------------------------------------------------------------
 // Persistence
@@ -65,8 +73,14 @@ function fileMtime(): number {
 function load(): Store | null {
   try {
     const parsed = JSON.parse(readFileSync(storeFile(), "utf8")) as Partial<Store>;
-    const tables: (keyof Store)[] = ["agencies", "recruiters", "jobs", "interview_configs", "sessions", "transcripts", "reports"];
-    return tables.every((t) => Array.isArray(parsed[t])) ? (parsed as Store) : null;
+    const tables: (keyof Store)[] = [
+    "agencies", "recruiters", "jobs", "interview_configs", "sessions", "transcripts", "reports",
+  ];
+  if (!tables.every((t) => Array.isArray(parsed[t]))) return null;
+  const store = parsed as Store;
+  // Older persisted files predate team invites.
+  if (!Array.isArray(store.agency_invites)) store.agency_invites = [];
+  return store;
   } catch {
     return null;
   }
@@ -118,8 +132,13 @@ function seed(): Store {
   const t = now();
   const agency: Agency = { id: DEMO_IDS.agency, name: "Interim Express", interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
   const recruiter: StoredRecruiter = {
-    id: DEMO_IDS.recruiter, agency_id: agency.id, full_name: DEMO_ACCOUNT.name, email: DEMO_ACCOUNT.email,
-    password_hash: hashPassword(DEMO_ACCOUNT.password), created_at: t,
+    id: DEMO_IDS.recruiter,
+    agency_id: agency.id,
+    full_name: DEMO_ACCOUNT.name,
+    email: DEMO_ACCOUNT.email,
+    role: "owner",
+    password_hash: hashPassword(DEMO_ACCOUNT.password),
+    created_at: t,
   };
   const facts = getDemoJobFacts();
   const job: Job = {
@@ -128,6 +147,7 @@ function seed(): Store {
   };
   const config: InterviewConfig = { ...newConfig(job), id: DEMO_IDS.config };
   const store: Store = {
+    agency_invites: [],
     agencies: [agency], recruiters: [recruiter], jobs: [job], interview_configs: [config],
     sessions: [], transcripts: [], reports: [],
   };
@@ -209,7 +229,7 @@ function seedSyntheticCandidates(store: Store, job: Job, config: InterviewConfig
     const completed = minutesAgo(person.startedAgo - person.minutes);
     const session: InterviewSession = {
       id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
-      token: person.token, candidate_label: person.label, is_synthetic: true,
+      token: person.token, candidate_label: person.label, candidate_email: null, invited_at: null, is_synthetic: true,
       status: "completed", mode: "avatar", engine: "gemini", end_reason: "completed", live_starts: 1, memory,
       created_at: minutesAgo(person.startedAgo + 30), started_at: started, completed_at: completed,
     };
@@ -232,9 +252,9 @@ function seedSyntheticCandidates(store: Store, job: Job, config: InterviewConfig
   // One invitation that has not been used yet.
   store.sessions.push({
     id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
-    token: newToken(), candidate_label: "Candidat C-104 (synthétique)", is_synthetic: true,
-    status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
-    created_at: minutesAgo(20), started_at: null, completed_at: null,
+    token: newToken(), candidate_label: "Candidat C-104 (synthétique)", candidate_email: null, invited_at: null,
+    is_synthetic: true, status: "created", mode: null, engine: null, end_reason: null, live_starts: 0,
+    memory: emptyMemory(), created_at: minutesAgo(20), started_at: null, completed_at: null,
   });
 }
 
@@ -248,8 +268,6 @@ function addDaysIso(isoDate: string, days: number): string {
 // ---------------------------------------------------------------------------
 // Accounts and agencies
 // ---------------------------------------------------------------------------
-
-const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** The recruiter with these credentials, or null. */
 export async function authenticate(email: string, password: string): Promise<Recruiter | null> {
@@ -282,13 +300,138 @@ export async function createAgencyWithRecruiter(input: {
   const t = now();
   const agency: Agency = { id: randomUUID(), name: input.agencyName.trim(), interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
   const recruiter: StoredRecruiter = {
-    id: randomUUID(), agency_id: agency.id, full_name: input.fullName.trim(), email: input.email.trim().toLowerCase(),
-    password_hash: hashPassword(input.password), created_at: t,
+    id: randomUUID(),
+    agency_id: agency.id,
+    full_name: input.fullName.trim(),
+    email: input.email.trim().toLowerCase(),
+    role: "owner",
+    password_hash: hashPassword(input.password),
+    created_at: t,
   };
   store.agencies.push(agency);
   store.recruiters.push(recruiter);
   save();
+  await seedStarterJobs(agency.id, agency.name);
   return publicRecruiter(recruiter);
+}
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
+
+export async function listAgencyRecruiters(agencyId: string): Promise<Recruiter[]> {
+  return db()
+    .recruiters.filter((r) => r.agency_id === agencyId)
+    .map(publicRecruiter)
+    .sort((a, b) => a.full_name.localeCompare(b.full_name, "fr"));
+}
+
+export async function listAgencyInvites(agencyId: string): Promise<AgencyInvite[]> {
+  return db()
+    .agency_invites.filter((i) => i.agency_id === agencyId && !i.accepted_at)
+    .map(clone)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+export async function getAgencyInviteByToken(token: string): Promise<(AgencyInvite & { agency_name: string }) | null> {
+  const invite = db().agency_invites.find((i) => i.token === token);
+  if (!invite || invite.accepted_at) return null;
+  if (Date.parse(invite.expires_at) < Date.now()) return null;
+  const agency = db().agencies.find((a) => a.id === invite.agency_id);
+  if (!agency) return null;
+  return { ...clone(invite), agency_name: agency.name };
+}
+
+/** Creates (or refreshes) a pending member invite. Null when email already belongs to the agency. */
+export async function createAgencyInvite(input: {
+  agencyId: string;
+  email: string;
+  invitedBy: string;
+}): Promise<AgencyInvite | null> {
+  const store = db();
+  const email = input.email.trim().toLowerCase();
+  // One email = one recruiter account globally (Auth uniqueness).
+  if (store.recruiters.some((r) => sameEmail(r.email, email))) return null;
+
+  const existing = store.agency_invites.find(
+    (i) => i.agency_id === input.agencyId && sameEmail(i.email, email) && !i.accepted_at,
+  );
+  const t = now();
+  const expires = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+  if (existing) {
+    existing.token = newToken();
+    existing.invited_by = input.invitedBy;
+    existing.created_at = t;
+    existing.expires_at = expires;
+    save();
+    return clone(existing);
+  }
+
+  const invite: AgencyInvite = {
+    id: randomUUID(),
+    agency_id: input.agencyId,
+    email,
+    role: "member",
+    token: newToken(),
+    invited_by: input.invitedBy,
+    created_at: t,
+    expires_at: expires,
+    accepted_at: null,
+  };
+  store.agency_invites.push(invite);
+  save();
+  return clone(invite);
+}
+
+/** Accepts a team invite: creates the member account in the inviter's agency. */
+export async function acceptAgencyInvite(input: {
+  token: string;
+  fullName: string;
+  password: string;
+}): Promise<Recruiter | null> {
+  const store = db();
+  const invite = store.agency_invites.find((i) => i.token === input.token);
+  if (!invite || invite.accepted_at) return null;
+  if (Date.parse(invite.expires_at) < Date.now()) return null;
+  if (store.recruiters.some((r) => sameEmail(r.email, invite.email))) return null;
+
+  const t = now();
+  const recruiter: StoredRecruiter = {
+    id: randomUUID(),
+    agency_id: invite.agency_id,
+    full_name: input.fullName.trim(),
+    email: invite.email,
+    role: "member",
+    password_hash: hashPassword(input.password),
+    created_at: t,
+  };
+  invite.accepted_at = t;
+  store.recruiters.push(recruiter);
+  save();
+  return publicRecruiter(recruiter);
+}
+
+export async function revokeAgencyInvite(agencyId: string, inviteId: string): Promise<boolean> {
+  const store = db();
+  const before = store.agency_invites.length;
+  store.agency_invites = store.agency_invites.filter(
+    (i) => !(i.id === inviteId && i.agency_id === agencyId && !i.accepted_at),
+  );
+  if (store.agency_invites.length === before) return false;
+  save();
+  return true;
+}
+
+/** Fills an empty agency with the five demo scenario posts. No-op when jobs already exist. */
+export async function ensureStarterJobs(agencyId: string): Promise<void> {
+  if ((await listJobs(agencyId)).length > 0) return;
+  const agency = await getAgency(agencyId);
+  if (!agency) return;
+  await seedStarterJobs(agency.id, agency.name);
+}
+
+async function seedStarterJobs(agencyId: string, agencyName: string): Promise<void> {
+  for (const facts of starterJobFacts(agencyName)) {
+    await upsertJob(agencyId, { facts, status: "open" });
+  }
 }
 
 export async function updateAgency(agencyId: string, patch: { name: string }): Promise<Agency | null> {
@@ -413,15 +556,22 @@ export async function publicDemoJob(): Promise<Job | null> {
 // Interviews, recruiter side (scoped by agency)
 // ---------------------------------------------------------------------------
 
-function insertSession(job: Job, label: string | undefined): InterviewSession | null {
+function insertSession(
+  job: Job,
+  input: { label?: string; email?: string | null; invited?: boolean } = {},
+): InterviewSession | null {
   const store = db();
   const config = store.interview_configs.find((c) => c.job_id === job.id);
   if (!config) return null;
+  const email = input.email?.trim().toLowerCase() || null;
+  const label = input.label?.trim() || email || "Candidat anonyme";
+  const t = now();
   const session: InterviewSession = {
     id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
-    token: newToken(), candidate_label: label?.trim() || "Candidat anonyme", is_synthetic: false,
+    token: newToken(), candidate_label: label, candidate_email: email,
+    invited_at: input.invited ? t : null, is_synthetic: false,
     status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
-    created_at: now(), started_at: null, completed_at: null,
+    created_at: t, started_at: null, completed_at: null,
   };
   store.sessions.push(session);
   save();
@@ -429,10 +579,17 @@ function insertSession(job: Job, label: string | undefined): InterviewSession | 
 }
 
 /** New interview link for a job of this agency. Only open jobs accept new interviews. */
-export async function createSession(agencyId: string, input: { jobId: string; candidateLabel?: string }): Promise<InterviewSession | null> {
+export async function createSession(
+  agencyId: string,
+  input: { jobId: string; candidateEmail?: string; candidateLabel?: string },
+): Promise<InterviewSession | null> {
   const job = db().jobs.find((j) => j.id === input.jobId && j.agency_id === agencyId);
   if (!job || job.status !== "open") return null;
-  return insertSession(job, input.candidateLabel);
+  return insertSession(job, {
+    label: input.candidateLabel,
+    email: input.candidateEmail,
+    invited: Boolean(input.candidateEmail),
+  });
 }
 
 /** Called from the public demo's Server Action: the visitor's browser keeps a copy (serverless hosts). */
@@ -440,7 +597,7 @@ export async function createPublicDemoSession(scenarioId?: string | null): Promi
   const demo = await ensureDemoScenarioJob(scenarioId);
   const job = demo && db().jobs.find((j) => j.id === demo.id);
   const label = scenarioId ? `Essai · ${requireScenario(scenarioId).name}` : "Essai public";
-  const session = job ? insertSession(job, label) : null;
+  const session = job ? insertSession(job, { label }) : null;
   if (session) await rememberForCandidate(session.token);
   return session;
 }

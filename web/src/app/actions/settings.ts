@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { text, type FormState } from "@/app/actions/form-state";
-import { requireRecruiter } from "@/lib/auth/dal";
+import { requireOwner } from "@/lib/auth/dal";
 import { isAccentColor } from "@/lib/branding";
 import {
   assertBrandingImage,
@@ -25,7 +25,7 @@ const interviewerSchema = z.object({
 
 /** Who the candidates meet: name, voice and face of the AI interviewer. */
 export async function saveInterviewer(_previous: FormState, formData: FormData): Promise<FormState> {
-  const recruiter = await requireRecruiter();
+  const recruiter = await requireOwner();
   const parsed = interviewerSchema.safeParse({
     persona_name: text(formData, "persona_name"),
     voice: text(formData, "voice"),
@@ -55,7 +55,7 @@ export async function saveInterviewer(_previous: FormState, formData: FormData):
 const agencySchema = z.object({ name: z.string().min(2, "Indiquez le nom de l'agence.").max(80) });
 
 export async function saveAgency(_previous: FormState, formData: FormData): Promise<FormState> {
-  const recruiter = await requireRecruiter();
+  const recruiter = await requireOwner();
   const values = { name: text(formData, "name") };
   const parsed = agencySchema.safeParse(values);
   if (!parsed.success) return { fieldErrors: { name: parsed.error.issues[0].message }, values };
@@ -71,7 +71,7 @@ const BRANDING_FIELDS = [
 
 /** Agency branding shown to candidates: accent color, logo and banner. */
 export async function saveBranding(_previous: FormState, formData: FormData): Promise<FormState> {
-  const recruiter = await requireRecruiter();
+  const recruiter = await requireOwner();
   const agencyId = recruiter.agency.id;
   const accent = text(formData, "accent_color");
   if (!isAccentColor(accent)) {

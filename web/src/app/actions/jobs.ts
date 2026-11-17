@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { text, type FormState } from "@/app/actions/form-state";
-import { requireRecruiter } from "@/lib/auth/dal";
+import { requireOwner } from "@/lib/auth/dal";
 import { setJobStatus, upsertJob } from "@/lib/db";
 import { formatEur } from "@/lib/format";
 import { isIsoDate, jobFactsSchema } from "@/lib/job";
@@ -30,7 +30,7 @@ const formSchema = z.object({
 
 /** Creates or updates a job. The interviewer only ever answers from this sheet. */
 export async function saveJob(_previous: FormState, formData: FormData): Promise<FormState> {
-  const recruiter = await requireRecruiter();
+  const recruiter = await requireOwner();
   const id = text(formData, "id") || undefined;
   const startMode = text(formData, "start_mode");
   const values = {
@@ -80,7 +80,7 @@ export async function saveJob(_previous: FormState, formData: FormData): Promise
 
 /** Opens or closes a job. A closed job no longer accepts new interview links. */
 export async function changeJobStatus(formData: FormData): Promise<void> {
-  const recruiter = await requireRecruiter();
+  const recruiter = await requireOwner();
   const status = z.enum(["draft", "open", "closed"]).safeParse(text(formData, "status"));
   if (!status.success) return;
   await setJobStatus(recruiter.agency.id, text(formData, "id"), status.data);

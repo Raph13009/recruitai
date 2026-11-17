@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { canManageAgency, withRole } from "@/lib/auth/permissions";
 import { readSessionRecruiterId } from "@/lib/auth/session";
 import { getAgency, getRecruiter } from "@/lib/db";
 import type { CurrentRecruiter } from "@/lib/db/types";
@@ -19,6 +20,7 @@ export const getCurrentRecruiter = cache(async (): Promise<CurrentRecruiter | nu
     id: recruiter.id,
     full_name: recruiter.full_name,
     email: recruiter.email,
+    role: withRole(recruiter.role),
     agency: { id: agency.id, name: agency.name, branding: agency.branding },
   };
 });
@@ -27,5 +29,12 @@ export const getCurrentRecruiter = cache(async (): Promise<CurrentRecruiter | nu
 export async function requireRecruiter(): Promise<CurrentRecruiter> {
   const recruiter = await getCurrentRecruiter();
   if (!recruiter) redirect("/login");
+  return recruiter;
+}
+
+/** Owner-only actions (jobs, settings, team invites). Members are sent back to the dashboard. */
+export async function requireOwner(): Promise<CurrentRecruiter> {
+  const recruiter = await requireRecruiter();
+  if (!canManageAgency(recruiter.role)) redirect("/recruiter");
   return recruiter;
 }

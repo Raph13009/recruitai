@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { text, type FormState } from "@/app/actions/form-state";
 import { endSession, startSession } from "@/lib/auth/session";
-import { authenticate, createAgencyWithRecruiter, demoRecruiter } from "@/lib/db";
+import { acceptAgencyInvite, authenticate, createAgencyWithRecruiter, demoRecruiter } from "@/lib/db";
 import { ConfigError, env } from "@/lib/env";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 
@@ -85,4 +85,43 @@ export async function demoLogin(): Promise<void> {
 export async function logout(): Promise<void> {
   await endSession();
   redirect("/");
+}
+
+const acceptInviteSchema = z.object({
+  token: z.string().min(10).max(200),
+  name: z.string().min(2, "Indiquez votre nom.").max(80),
+  password: z.string().min(8, "Au moins 8 caractères.").max(200),
+});
+
+/** Accept a team invite: create a member account in the inviter's agency. */
+export async function acceptInvite(_previous: FormState, formData: FormData): Promise<FormState> {
+  const values = { name: text(formData, "name"), token: text(formData, "token") };
+  if (!rateLimit(`accept-invite:${clientAddress(await headers())}`, 10, TEN_MINUTES)) {
+    return { error: "Trop de tentatives. Réessayez dans quelques minutes.", values };
+  }
+  const parsed = acceptInviteSchema.safeParse({
+    ...values,
+    password: String(formData.get("password") ?? ""),
+  });
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) fieldErrors[String(issue.path[0])] ??= issue.message;
+    return { fieldErrors, values };
+  }
+
+  const recruiter = await acceptAgencyInvite({
+    token: parsed.data.token,
+    fullName: parsed.data.name,
+    password: parsed.data.password,
+  });
+  if (!recruiter) {
+    return {
+      error: "Cette invitation est invalide, expirée, ou l’e-mail a déjà un compte.",
+      values,
+    };
+  }
+
+  const problem = await open(recruiter.id);
+  if (problem) return { error: problem, values };
+  redirect("/recruiter?bienvenue=1");
 }

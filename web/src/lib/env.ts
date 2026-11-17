@@ -58,6 +58,10 @@ export const env = {
   demoLogin: () => flag("ALLOW_DEMO_LOGIN", !isProduction()),
   /** Public "try the interview" page (/demo). It can spend voice/avatar credits: turn off if needed. */
   publicDemo: () => flag("PUBLIC_DEMO", true),
+
+  // --- Email (Resend). Absent key = invitations still create links; email is skipped locally. ---
+  resendApiKey: () => read("RESEND_API_KEY"),
+  resendFrom: () => read("RESEND_FROM") ?? "RecruitAI <onboarding@resend.dev>",
 };
 
 export function requireEnv(value: string | undefined, label: string): string {

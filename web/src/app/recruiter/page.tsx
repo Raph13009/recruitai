@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { canManageJobs } from "@/lib/auth/permissions";
 import { requireRecruiter } from "@/lib/auth/dal";
 import { getAgency, getDashboard } from "@/lib/db";
 import { formatDuration, formatPercent } from "@/lib/format";
@@ -38,6 +39,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/recruiter">, "search
     getAgency(recruiter.agency.id),
   ]);
   const firstName = recruiter.full_name.split(/\s+/)[0];
+  const manageJobs = canManageJobs(recruiter.role);
   const openJobs = jobs.filter((job) => job.status === "open");
   const jobTitles = new Map(jobs.map((job) => [job.id, job.title]));
   const interviewer = agency?.interviewer;
@@ -58,15 +60,19 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/recruiter">, "search
         title={`Bonjour ${firstName}`}
         description={`${recruiter.agency.name} · ${counts.total} entretien${counts.total > 1 ? "s" : ""} au total`}
         actions={
-          <Button asChild>
-            <Link href="/recruiter/jobs/new">
-              <PlusIcon /> Nouveau poste
-            </Link>
-          </Button>
+          manageJobs ? (
+            <Button asChild>
+              <Link href="/recruiter/jobs/new">
+                <PlusIcon /> Nouveau poste
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 
-      {showWelcome && <GettingStarted hasJob={jobs.length > 0} hasSession={sessions.some((s) => !s.is_synthetic)} />}
+      {showWelcome && manageJobs && (
+        <GettingStarted hasJob={jobs.length > 0} hasSession={sessions.some((s) => !s.is_synthetic)} />
+      )}
 
       <section aria-label="Indicateurs" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((kpi) => (
@@ -137,11 +143,13 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/recruiter">, "search
                     <EmptyTitle>Pas encore de poste</EmptyTitle>
                     <EmptyDescription>La fiche du poste est la seule source de l’intervieweur.</EmptyDescription>
                   </EmptyHeader>
-                  <EmptyContent>
-                    <Button asChild size="sm">
-                      <Link href="/recruiter/jobs/new">Créer un poste</Link>
-                    </Button>
-                  </EmptyContent>
+                  {manageJobs && (
+                    <EmptyContent>
+                      <Button asChild size="sm">
+                        <Link href="/recruiter/jobs/new">Créer un poste</Link>
+                      </Button>
+                    </EmptyContent>
+                  )}
                 </Empty>
               )}
             </CardContent>
@@ -152,11 +160,13 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/recruiter">, "search
               <CardHeader>
                 <CardTitle className="text-lg">Votre intervieweur</CardTitle>
                 <CardDescription>Ce que voient et entendent vos candidats.</CardDescription>
-                <CardAction>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href="/recruiter/settings">Régler</Link>
-                  </Button>
-                </CardAction>
+                {manageJobs && (
+                  <CardAction>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href="/recruiter/settings">Régler</Link>
+                    </Button>
+                  </CardAction>
+                )}
               </CardHeader>
               <CardContent className="flex items-center gap-4">
                 {interviewer.avatar_preview_url ? (
@@ -193,7 +203,7 @@ function GettingStarted({ hasJob, hasSession }: { hasJob: boolean; hasSession: b
   const steps = [
     { done: hasJob, title: "Décrivez un poste", text: "Lieu, horaires, salaire : l’IA ne répond qu’avec cette fiche.", href: "/recruiter/jobs/new", cta: "Créer un poste" },
     { done: false, title: "Réglez l’intervieweur", text: "Son prénom, sa voix et son visage en visio.", href: "/recruiter/settings", cta: "Ouvrir les réglages" },
-    { done: hasSession, title: "Invitez un candidat", text: "Un lien personnel, à envoyer par SMS ou e-mail.", href: "/recruiter/jobs", cta: "Choisir un poste" },
+    { done: hasSession, title: "Invitez un candidat", text: "Saisissez son e-mail : un lien unique, une seule tentative.", href: "/recruiter/jobs", cta: "Choisir un poste" },
   ];
   return (
     <Card className="border-primary/20 bg-accent/40">

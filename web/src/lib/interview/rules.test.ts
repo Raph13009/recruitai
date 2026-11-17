@@ -41,7 +41,8 @@ describe("shift preference", () => {
 describe("JSON export", () => {
   const session: InterviewSession = {
     id: "s1", agency_id: "a1", job_id: "j1", interview_config_id: "c1", token: "secret-link",
-    candidate_label: "Karim – à rappeler lundi", is_synthetic: false, status: "completed", mode: "audio",
+    candidate_label: "Karim – à rappeler lundi", candidate_email: null, invited_at: null, is_synthetic: false,
+    status: "completed", mode: "audio",
     engine: "gemini", end_reason: "completed", live_starts: 1, memory: emptyMemory(),
     created_at: T0, started_at: T0, completed_at: T0,
   };

@@ -119,3 +119,11 @@ export function listScenarioCards() {
     featured: ["logistique-urgent", "industrie-production", "restauration-evenement"].includes(s.id),
   }));
 }
+
+/** Five demo scenario posts for a new recruiter agency (agency name overridden). */
+export function starterJobFacts(agencyName: string): JobFacts[] {
+  return DEMO_SCENARIOS.map((scenario) => ({
+    ...scenarioToJobFacts(scenario),
+    agency: agencyName,
+  }));
+}

@@ -3,29 +3,79 @@
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { text } from "@/app/actions/form-state";
 import { requireRecruiter } from "@/lib/auth/dal";
-import { completeSession, createSession, deleteSession, getSession } from "@/lib/db";
+import { completeSession, createSession, deleteSession, getJob, getSession } from "@/lib/db";
+import { sendInviteEmail } from "@/lib/email/invite";
 
 export interface InviteState {
   error?: string;
-  /** The interview link to send to the candidate. */
+  /** Soft notice when the link was created but email could not be sent. */
+  notice?: string;
+  /** The interview link (shown after invite for copy / local testing). */
   link?: string;
-  label?: string;
+  email?: string;
 }
 
-/** Creates an interview link for a candidate on one of the agency's open jobs. */
-export async function inviteCandidate(_previous: InviteState, formData: FormData): Promise<InviteState> {
-  const recruiter = await requireRecruiter();
-  const label = text(formData, "label").slice(0, 80);
-  const session = await createSession(recruiter.agency.id, { jobId: text(formData, "jobId"), candidateLabel: label });
-  if (!session) return { error: "Ce poste n'accepte pas de nouveaux entretiens (il est introuvable ou fermé)." };
-
-  const h = await headers();
+function interviewOrigin(h: Headers): string {
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const protocol = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  return `${protocol}://${host}`;
+}
+
+const inviteSchema = z.object({
+  jobId: z.string().min(1),
+  email: z.email("Indiquez un e-mail valide."),
+});
+
+/** Creates a one-attempt interview link and emails it to the candidate via Resend. */
+export async function inviteCandidate(_previous: InviteState, formData: FormData): Promise<InviteState> {
+  const recruiter = await requireRecruiter();
+  const parsed = inviteSchema.safeParse({
+    jobId: text(formData, "jobId"),
+    email: text(formData, "email").trim().toLowerCase(),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Indiquez un e-mail valide." };
+  }
+
+  const job = await getJob(recruiter.agency.id, parsed.data.jobId);
+  if (!job || job.status !== "open") {
+    return { error: "Ce poste n'accepte pas de nouveaux entretiens (il est introuvable ou fermé)." };
+  }
+
+  const session = await createSession(recruiter.agency.id, {
+    jobId: job.id,
+    candidateEmail: parsed.data.email,
+  });
+  if (!session) return { error: "Impossible de créer l’invitation pour ce poste." };
+
+  const link = `${interviewOrigin(await headers())}/interview/${session.token}`;
+  const emailResult = await sendInviteEmail({
+    to: parsed.data.email,
+    agencyName: recruiter.agency.name,
+    jobTitle: job.title,
+    interviewUrl: link,
+  });
+
   refresh();
-  return { link: `${protocol}://${host}/interview/${session.token}`, label: session.candidate_label };
+
+  if (emailResult.sent) {
+    return { link, email: parsed.data.email };
+  }
+  if (emailResult.reason === "missing_key") {
+    return {
+      link,
+      email: parsed.data.email,
+      notice: "Invitation créée. L’e-mail n’a pas été envoyé (RESEND_API_KEY manquant) — copiez le lien pour tester.",
+    };
+  }
+  return {
+    link,
+    email: parsed.data.email,
+    notice: `Invitation créée, mais l’e-mail a échoué : ${emailResult.detail ?? "erreur d’envoi"}. Copiez le lien ci-dessous.`,
+  };
 }
 
 /** Closes an interview the candidate left open, and builds the report from what was said. */
