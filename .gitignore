@@ -24,3 +24,4 @@ data/*
 
 # whisper.cpp is cloned/built by scripts/setup_whisper.sh — do not commit
 tools/whisper.cpp/
+supabase/.temp/

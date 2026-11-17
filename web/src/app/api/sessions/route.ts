@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { fail, readJson } from "@/lib/api";
-import { createSession, persistSession } from "@/lib/db/mock";
+import { createSession, persistSession } from "@/lib/db";
 
 const bodySchema = z.object({
   jobId: z.string().optional(),
@@ -11,7 +11,7 @@ const bodySchema = z.object({
 export async function POST(req: NextRequest) {
   const body = await readJson(req, bodySchema);
   if ("error" in body) return body.error;
-  const session = createSession(body.data);
+  const session = await createSession(body.data);
   if (!session) return fail("Poste introuvable.", 404);
   await persistSession(session.id);
   return Response.json(

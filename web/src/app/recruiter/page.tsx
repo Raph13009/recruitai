@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { PageSkeleton } from "@/components/brand";
 import { CreateLinkButton } from "@/components/CreateLinkButton";
 import { RecruiterShell, StatusPill } from "@/components/recruiter-shell";
-import { getDashboard } from "@/lib/db/mock";
+import { getDashboard } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
 export const metadata = { title: "Espace recruteur · RecruitAI", robots: { index: false } };
@@ -21,7 +21,7 @@ export default function RecruiterPage() {
 
 async function Dashboard() {
   await connection();
-  const { agency, jobs, sessions, counts } = getDashboard();
+  const { agency, jobs, sessions, counts } = await getDashboard();
 
   return (
     <>
@@ -29,7 +29,7 @@ async function Dashboard() {
       <h1 className="display mt-2 text-4xl font-semibold">Entretiens</h1>
       <p className="mt-2 text-slate">
         {counts.total} entretien{counts.total > 1 ? "s" : ""} · {counts.completed} terminé{counts.completed > 1 ? "s" : ""}
-        {counts.in_progress ? ` · ${counts.in_progress} en cours` : ""}. Données de démonstration en mémoire.
+        {counts.in_progress ? ` · ${counts.in_progress} en cours` : ""}.
       </p>
 
       <section className="mt-10 space-y-6">

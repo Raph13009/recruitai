@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { PageSkeleton, SiteHeader } from "@/components/brand";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
-import { ensureSession, toCandidatePayload } from "@/lib/db/mock";
+import { ensureSession, toCandidatePayload } from "@/lib/db";
 
 export const metadata = { title: "Entretien · RecruitAI", robots: { index: false } };
 
@@ -23,9 +23,8 @@ export default function InterviewPage({ params }: PageProps<"/interview/[token]"
 async function Room({ params }: Pick<PageProps<"/interview/[token]">, "params">) {
   await connection();
   const { token } = await params;
-  // Recreate the session on this instance if the cookie/mock store was cold (no Supabase yet).
   const session = await ensureSession({ token, candidateLabel: "Candidat démo" });
-  const payload = session && toCandidatePayload(session);
+  const payload = session && (await toCandidatePayload(session));
   if (!payload) notFound();
   return <InterviewRoom payload={payload} />;
 }

@@ -1,8 +1,8 @@
 import { connection } from "next/server";
-import { getDashboard } from "@/lib/db/mock";
+import { getDashboard } from "@/lib/db";
 
-// Mock recruiter data. No auth yet: add Supabase auth + RLS before exposing this.
+// Recruiter data from Supabase (or mock). No auth yet: add Supabase Auth + RLS before exposing this.
 export async function GET() {
   await connection(); // read per request, never at build time
-  return Response.json(getDashboard());
+  return Response.json(await getDashboard());
 }

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { PageSkeleton } from "@/components/brand";
 import { RecruiterShell, StatusPill } from "@/components/recruiter-shell";
-import { getReport, getSessionById, getTranscript } from "@/lib/db/mock";
+import { getReport, getSessionById, getTranscript } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import type { ReportFact } from "@/lib/interview/report";
 
@@ -43,10 +43,10 @@ export default function SessionPage({ params }: PageProps<"/recruiter/sessions/[
 async function SessionDetail({ params }: Pick<PageProps<"/recruiter/sessions/[id]">, "params">) {
   await connection();
   const { id } = await params;
-  const session = getSessionById(id);
+  const session = await getSessionById(id);
   if (!session) notFound();
-  const report = getReport(session.id)?.content;
-  const transcript = getTranscript(session.id);
+  const report = (await getReport(session.id))?.content;
+  const transcript = await getTranscript(session.id);
 
   return (
     <>

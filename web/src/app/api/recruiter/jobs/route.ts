@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 import { z } from "zod";
 import { readJson } from "@/lib/api";
-import { listJobs, upsertJob } from "@/lib/db/mock";
+import { listJobs, upsertJob } from "@/lib/db";
 import { jobFactsSchema } from "@/lib/job";
 
 const bodySchema = z.object({
@@ -12,11 +12,11 @@ const bodySchema = z.object({
 
 export async function GET() {
   await connection(); // read per request, never at build time
-  return Response.json({ jobs: listJobs() });
+  return Response.json({ jobs: await listJobs() });
 }
 
 export async function POST(req: Request) {
   const body = await readJson(req, bodySchema);
   if ("error" in body) return body.error;
-  return Response.json({ job: upsertJob(body.data) });
+  return Response.json({ job: await upsertJob(body.data) });
 }

@@ -20,7 +20,10 @@ export const env = {
   geminiModel: () =>
     read("GEMINI_LIVE_MODEL") ?? "gemini-3.1-flash-live-preview",
   geminiVoice: () => read("GEMINI_VOICE") ?? "Aoede",
+  // Default true (in-memory). Set USE_MOCK_DB=false + SUPABASE_* to use Postgres.
   useMockDb: () => read("USE_MOCK_DB")?.toLowerCase() !== "false",
+  supabaseUrl: () => read("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
+  supabaseServiceRoleKey: () => read("SUPABASE_SERVICE_ROLE_KEY"),
 };
 
 export function requireEnv(value: string | undefined, label: string): string {

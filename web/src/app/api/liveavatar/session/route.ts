@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { fail, handleError, readJson } from "@/lib/api";
-import { ensureSession, markStarted, persistSession } from "@/lib/db/mock";
+import { ensureSession, markStarted, persistSession } from "@/lib/db";
 import { env } from "@/lib/env";
 import { createLiteSessionToken } from "@/lib/liveavatar/client";
 
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
   try {
     const info = await createLiteSessionToken({ sandbox: body.data.sandbox });
-    markStarted(session, "avatar");
+    await markStarted(session, "avatar");
     await persistSession(session.id);
     return Response.json(info);
   } catch (err) {
