@@ -7,6 +7,13 @@ export type Uuid = string;
 export type Timestamp = string; // ISO 8601
 
 /** Who the candidate meets in the video call. One persona per agency in the MVP. */
+export interface AgencyBranding {
+  logo_url: string | null;
+  banner_url: string | null;
+  /** #RRGGBB */
+  accent_color: string;
+}
+
 export interface InterviewerSettings {
   /** First name the AI introduces itself with. */
   persona_name: string;
@@ -24,6 +31,7 @@ export interface Agency {
   id: Uuid;
   name: string;
   interviewer: InterviewerSettings; // jsonb
+  branding: AgencyBranding;
   created_at: Timestamp;
 }
 
@@ -129,6 +137,7 @@ export interface CandidateSessionPayload {
     /** The avatar service runs in sandbox: a test face, sessions of about one minute. */
     sandbox: boolean;
   };
+  branding: AgencyBranding;
 }
 
 /** The signed-in recruiter, as exposed to pages and client components (no secrets). */
@@ -136,5 +145,5 @@ export interface CurrentRecruiter {
   id: Uuid;
   full_name: string;
   email: string;
-  agency: { id: Uuid; name: string };
+  agency: { id: Uuid; name: string; branding: AgencyBranding };
 }
