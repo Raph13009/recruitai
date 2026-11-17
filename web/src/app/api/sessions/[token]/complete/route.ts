@@ -5,9 +5,14 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/sessions/[toke
   await hydrateFromCookie();
   const { token } = await ctx.params;
   const session = await getSessionByToken(token);
-  if (!session) return fail("Lien d'entretien invalide.", 404);
+  if (!session) return fail("Invalid interview link.", 404);
   const report = await completeSession(session);
-  if (!report) return fail("Poste introuvable.", 404);
+  if (!report) return fail("Job not found.", 404);
   await persistSession(session.id);
-  return Response.json({ ok: true, status: "completed", reportId: report.id });
+  return Response.json({
+    ok: true,
+    status: "completed",
+    reportId: report.id,
+    report: report.content,
+  });
 }

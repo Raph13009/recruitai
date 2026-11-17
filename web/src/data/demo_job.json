@@ -1,13 +1,13 @@
 {
   "agency": "Interim Express",
-  "job_title": "Agent de quai / manutentionnaire",
+  "job_title": "Warehouse operative / handler",
   "location": "Lyon",
-  "contract": "Mission temporaire de 2 semaines, renouvelable",
+  "contract": "2-week temporary assignment, renewable",
   "salary_gross_hourly_eur": 12.50,
-  "salary_note": "12,50 € brut de l'heure, hors éventuelles indemnités légales applicables",
+  "salary_note": "€12.50 gross per hour, excluding any applicable statutory allowances",
   "working_hours": ["6:00–13:00", "13:00–20:00"],
-  "tasks": "Chargement, déchargement et tri de colis",
-  "experience": "Débutants acceptés",
+  "tasks": "Loading, unloading, and sorting parcels",
+  "experience": "Beginners welcome",
   "start_date_rule": "next_monday",
-  "disclaimer": "Toutes les informations de ce poste sont fictives."
+  "disclaimer": "All information about this role is fictional."
 }

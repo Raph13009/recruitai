@@ -25,11 +25,6 @@ export function getDemoJobFacts(): JobFacts {
   return jobFactsSchema.parse(demoJob);
 }
 
-const MONTHS_FR = [
-  "janvier", "février", "mars", "avril", "mai", "juin",
-  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-];
-
 /** Today's date (YYYY-MM-DD) in Paris, independent of the server timezone. */
 function todayInParis(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
@@ -45,9 +40,15 @@ export function nextMonday(today: string = todayInParis()): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Human-readable start date (English). Field name kept as start_date_fr for schema compatibility. */
 export function formatFrDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d === 1 ? "1er" : d} ${MONTHS_FR[m - 1]} ${y}`;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
 export function toJobBrief(facts: JobFacts, today?: string): JobBrief {

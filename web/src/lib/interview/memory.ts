@@ -62,7 +62,7 @@ function normalize(field: FactField, normalized: string | null | undefined, work
     case "availability":
       return value === "immediate" || (ISO_DATE.test(value) && !Number.isNaN(Date.parse(value))) ? value : null;
     case "shift_preference":
-      return [...workingHours, "les deux", "aucun"].includes(value) ? value : null;
+      return [...workingHours, "les deux", "aucun", "both", "none"].includes(value) ? value : null;
     case "salary_expectation": {
       const n = Number(value.replace(",", "."));
       return Number.isFinite(n) && n > 0 && n < 1000 ? String(n) : null;

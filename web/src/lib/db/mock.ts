@@ -262,7 +262,7 @@ export function toCandidatePayload(session: InterviewSession): CandidateSessionP
       salary_gross_hourly_eur: brief.salary_gross_hourly_eur, working_hours: brief.working_hours,
       tasks: brief.tasks, start_date_fr: brief.start_date_fr,
     },
-    ai_disclosure: config.ai_disclosure,
+    ai_disclosure: AI_DISCLOSURE,
   };
 }
 

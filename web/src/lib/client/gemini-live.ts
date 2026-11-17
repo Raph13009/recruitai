@@ -94,7 +94,7 @@ export class GeminiLiveClient {
     this.started = true;
     if (this.playLocalAudio) await this.player.resume();
     this.session.sendRealtimeInput({
-      text: "Commence l'entretien maintenant. Prononce ton ouverture, puis attends ma réponse.",
+      text: "Start the interview now. Deliver your opening, then wait for my reply.",
     });
   }
 

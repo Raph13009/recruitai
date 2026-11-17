@@ -267,7 +267,7 @@ export async function toCandidatePayload(
       tasks: brief.tasks,
       start_date_fr: brief.start_date_fr,
     },
-    ai_disclosure: (config as InterviewConfig).ai_disclosure,
+    ai_disclosure: AI_DISCLOSURE,
   };
 }
 
