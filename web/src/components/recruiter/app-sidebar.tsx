@@ -11,7 +11,7 @@ export function AppSidebar({ recruiter, ...props }: { recruiter: CurrentRecruite
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <AgencyBadge agency={recruiter.agency.name} />
+        <AgencyBadge agency={recruiter.agency.name} logoUrl={recruiter.agency.branding.logo_url} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain />
