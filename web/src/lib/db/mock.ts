@@ -10,10 +10,13 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import path from "node:path";
 import { dataFile } from "@/lib/data-dir";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, type SessionContext } from "@/lib/db/helpers";
+import { defaultBranding } from "@/lib/branding";
+import {
+  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, type SessionContext,
+} from "@/lib/db/helpers";
 import { readDurableBag, writeDurableBag } from "@/lib/db/persist";
 import type {
-  Agency, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession,
+  Agency, AgencyBranding, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession,
   InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
@@ -113,7 +116,7 @@ function db(): Store {
 /** Stable ids (same as the Supabase seed) so a demo interview resolves on every server instance. */
 function seed(): Store {
   const t = now();
-  const agency: Agency = { id: DEMO_IDS.agency, name: "Interim Express", interviewer: defaultInterviewer(), created_at: t };
+  const agency: Agency = { id: DEMO_IDS.agency, name: "Interim Express", interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
   const recruiter: StoredRecruiter = {
     id: DEMO_IDS.recruiter, agency_id: agency.id, full_name: DEMO_ACCOUNT.name, email: DEMO_ACCOUNT.email,
     password_hash: hashPassword(DEMO_ACCOUNT.password), created_at: t,
@@ -266,7 +269,8 @@ export async function getRecruiter(id: string): Promise<Recruiter | null> {
 }
 
 export async function getAgency(id: string): Promise<Agency | null> {
-  return clone(db().agencies.find((a) => a.id === id) ?? null);
+  const agency = db().agencies.find((a) => a.id === id);
+  return agency ? clone(normalizeAgency(agency)) : null;
 }
 
 /** Creates an agency and its first recruiter. Returns null when the email is already taken. */
@@ -276,7 +280,7 @@ export async function createAgencyWithRecruiter(input: {
   const store = db();
   if (store.recruiters.some((r) => sameEmail(r.email, input.email))) return null;
   const t = now();
-  const agency: Agency = { id: randomUUID(), name: input.agencyName.trim(), interviewer: defaultInterviewer(), created_at: t };
+  const agency: Agency = { id: randomUUID(), name: input.agencyName.trim(), interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
   const recruiter: StoredRecruiter = {
     id: randomUUID(), agency_id: agency.id, full_name: input.fullName.trim(), email: input.email.trim().toLowerCase(),
     password_hash: hashPassword(input.password), created_at: t,
@@ -294,7 +298,7 @@ export async function updateAgency(agencyId: string, patch: { name: string }): P
   // Job sheets carry the agency name the interviewer says out loud: keep them in step.
   for (const job of db().jobs) if (job.agency_id === agencyId) job.facts = { ...job.facts, agency: agency.name };
   save();
-  return clone(agency);
+  return clone(normalizeAgency(agency));
 }
 
 export async function updateInterviewer(agencyId: string, settings: InterviewerSettings): Promise<Agency | null> {
@@ -302,7 +306,15 @@ export async function updateInterviewer(agencyId: string, settings: InterviewerS
   if (!agency) return null;
   agency.interviewer = { ...settings, persona_name: settings.persona_name.trim() || DEFAULT_PERSONA };
   save();
-  return clone(agency);
+  return clone(normalizeAgency(agency));
+}
+
+export async function updateAgencyBranding(agencyId: string, branding: AgencyBranding): Promise<Agency | null> {
+  const agency = db().agencies.find((a) => a.id === agencyId);
+  if (!agency) return null;
+  agency.branding = { ...defaultBranding(), ...branding };
+  save();
+  return clone(normalizeAgency(agency));
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +536,7 @@ export async function getSessionContext(token: string): Promise<SessionContext |
   const agency = session && store.agencies.find((a) => a.id === session.agency_id);
   const config = session && store.interview_configs.find((c) => c.id === session.interview_config_id);
   if (!session || !job || !agency || !config) return null;
-  return clone({ session, job, brief: jobBrief(job), agency, config });
+  return clone({ session, job, brief: jobBrief(job), agency: normalizeAgency(agency), config });
 }
 
 /** Marks the call as started and counts the start. Returns the number of starts so far. */

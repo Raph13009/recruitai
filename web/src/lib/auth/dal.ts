@@ -19,7 +19,7 @@ export const getCurrentRecruiter = cache(async (): Promise<CurrentRecruiter | nu
     id: recruiter.id,
     full_name: recruiter.full_name,
     email: recruiter.email,
-    agency: { id: agency.id, name: agency.name },
+    agency: { id: agency.id, name: agency.name, branding: agency.branding },
   };
 });
 

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { candidatePayloadOf, dashboardOf, normalizeSession, withInterviewer } from "@/lib/db/helpers";
+import { withBranding } from "@/lib/branding";
+import { candidatePayloadOf, dashboardOf, normalizeAgency, normalizeSession, withInterviewer } from "@/lib/db/helpers";
 import { sealBag, sealWithinLimit, unsealBag, type DurableBag } from "@/lib/db/persist";
 import type { Agency, InterviewConfig, InterviewSession, Job, TranscriptTurn } from "@/lib/db/types";
 import { emptyMemory } from "@/lib/interview/memory";
@@ -94,12 +95,18 @@ describe("shared store helpers", () => {
     const agency = withInterviewer({ id: "a1", name: "Agence", created_at: T0, interviewer: null });
     expect(agency.interviewer.persona_name).toBeTruthy();
     expect(agency.interviewer.video_enabled).toBe(true);
+    const branded = withBranding({ ...agency, branding: null });
+    expect(branded.branding).toEqual({ logo_url: null, banner_url: null, accent_color: "#0f6b5c" });
+    const normalized = normalizeAgency({ id: "a1", name: "Agence", created_at: T0, interviewer: null, branding: null });
+    expect(normalized.interviewer.persona_name).toBeTruthy();
+    expect(normalized.branding.accent_color).toBe("#0f6b5c");
   });
 
   it("builds the candidate payload with the agency's interviewer name", () => {
     const j = job();
-    const agency: Agency = withInterviewer({ id: "a1", name: "Agence", created_at: T0 });
+    const agency: Agency = withBranding(withInterviewer({ id: "a1", name: "Agence", created_at: T0 }));
     agency.interviewer.persona_name = "Inès";
+    agency.branding = { logo_url: "https://cdn.example/logo.png", banner_url: null, accent_color: "#112233" };
     const config: InterviewConfig = {
       id: "c1", agency_id: "a1", job_id: "j1", language: "fr", voice: "Aoede", ai_disclosure: AI_DISCLOSURE_TEMPLATE, created_at: T0,
     };
@@ -109,6 +116,7 @@ describe("shared store helpers", () => {
     );
     expect(payload.experience.persona_name).toBe("Inès");
     expect(payload.ai_disclosure).toContain("Inès");
+    expect(payload.branding).toEqual(agency.branding);
     expect(payload).not.toHaveProperty("id"); // the candidate never sees internal ids
   });
 });

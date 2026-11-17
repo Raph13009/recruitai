@@ -5,13 +5,14 @@
 // and the session columns).
 import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
+import { defaultBranding } from "@/lib/branding";
 import { supabaseAdmin, supabaseAuthClient } from "@/lib/db/client";
 import {
-  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeSession, withInterviewer,
+  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, normalizeSession,
   type SessionContext,
 } from "@/lib/db/helpers";
 import type {
-  Agency, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession, InterviewerSettings, Job,
+  Agency, AgencyBranding, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode, InterviewSession, InterviewerSettings, Job,
   JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
@@ -30,7 +31,7 @@ function check<T>(result: { data: T; error: { message: string } | null }): T {
   return result.data;
 }
 
-const asAgency = (row: unknown) => withInterviewer(row as Agency);
+const asAgency = (row: unknown) => normalizeAgency(row as Agency);
 const asSession = (row: unknown) => normalizeSession(row as InterviewSession);
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,12 @@ export async function updateAgency(agencyId: string, patch: { name: string }): P
 export async function updateInterviewer(agencyId: string, settings: InterviewerSettings): Promise<Agency | null> {
   const interviewer = { ...settings, persona_name: settings.persona_name.trim() || DEFAULT_PERSONA };
   const row = check(await sb().from("agencies").update({ interviewer }).eq("id", agencyId).select("*").maybeSingle());
+  return row ? asAgency(row) : null;
+}
+
+export async function updateAgencyBranding(agencyId: string, branding: AgencyBranding): Promise<Agency | null> {
+  const merged = { ...defaultBranding(), ...branding };
+  const row = check(await sb().from("agencies").update({ branding: merged }).eq("id", agencyId).select("*").maybeSingle());
   return row ? asAgency(row) : null;
 }
 

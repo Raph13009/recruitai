@@ -28,6 +28,7 @@ export const getAgency: StoreApi["getAgency"] = (...a) => store().getAgency(...a
 export const createAgencyWithRecruiter: StoreApi["createAgencyWithRecruiter"] = (...a) => store().createAgencyWithRecruiter(...a);
 export const updateAgency: StoreApi["updateAgency"] = (...a) => store().updateAgency(...a);
 export const updateInterviewer: StoreApi["updateInterviewer"] = (...a) => store().updateInterviewer(...a);
+export const updateAgencyBranding: StoreApi["updateAgencyBranding"] = (...a) => store().updateAgencyBranding(...a);
 
 // Jobs
 export const listJobs: StoreApi["listJobs"] = (...a) => store().listJobs(...a);

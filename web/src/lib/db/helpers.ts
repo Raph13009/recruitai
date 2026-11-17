@@ -1,7 +1,8 @@
 // Pure helpers shared by both stores (local demo store and Supabase). No I/O here.
 import type {
-  Agency, CandidateSessionPayload, InterviewConfig, InterviewSession, InterviewerSettings, Job,
+  Agency, AgencyBranding, CandidateSessionPayload, InterviewConfig, InterviewSession, InterviewerSettings, Job,
 } from "@/lib/db/types";
+import { withBranding } from "@/lib/branding";
 import { env } from "@/lib/env";
 import { DEFAULT_PERSONA, renderDisclosure } from "@/lib/interview/prompt";
 import { toJobBrief, type JobBrief } from "@/lib/job";
@@ -34,10 +35,23 @@ export function defaultInterviewer(): InterviewerSettings {
 }
 
 /** Rows written before the interviewer settings existed get the defaults. */
-export function withInterviewer<T extends Omit<Agency, "interviewer"> & { interviewer?: InterviewerSettings | null }>(
-  agency: T,
-): Agency {
+export function withInterviewer<
+  T extends Omit<Agency, "interviewer" | "branding"> & {
+    interviewer?: InterviewerSettings | null;
+    branding?: AgencyBranding | null;
+  },
+>(agency: T): Omit<T, "interviewer"> & { interviewer: InterviewerSettings } {
   return { ...agency, interviewer: { ...defaultInterviewer(), ...(agency.interviewer ?? {}) } };
+}
+
+/** Agencies read from a store always carry interviewer settings and branding (older rows get defaults). */
+export function normalizeAgency(
+  agency: Omit<Agency, "interviewer" | "branding"> & {
+    interviewer?: InterviewerSettings | null;
+    branding?: AgencyBranding | null;
+  },
+): Agency {
+  return withBranding(withInterviewer(agency));
 }
 
 /** Sessions written before the MVP columns existed get neutral values. */
@@ -100,6 +114,7 @@ export function candidatePayloadOf(
       salary_gross_hourly_eur: brief.salary_gross_hourly_eur, working_hours: brief.working_hours,
       tasks: brief.tasks, start_date_fr: brief.start_date_fr,
     },
+    branding: agency.branding,
     ai_disclosure: renderDisclosure(config.ai_disclosure, persona),
     experience: { persona_name: persona, ...experience },
   };
