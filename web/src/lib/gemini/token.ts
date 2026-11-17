@@ -1,4 +1,10 @@
-import { GoogleGenAI, Modality, type LiveConnectConfig } from "@google/genai";
+import {
+  ActivityHandling,
+  GoogleGenAI,
+  Modality,
+  StartSensitivity,
+  type LiveConnectConfig,
+} from "@google/genai";
 import { env, requireEnv } from "@/lib/env";
 import { buildSystemInstruction } from "@/lib/interview/prompt";
 import { interviewTools } from "@/lib/interview/tools";
@@ -32,6 +38,15 @@ export async function createLiveToken(
     tools: [{ functionDeclarations: interviewTools }],
     inputAudioTranscription: {},
     outputAudioTranscription: {},
+    // Camille finishes her line even if the mic picks up noise; then she listens.
+    realtimeInputConfig: {
+      activityHandling: ActivityHandling.NO_INTERRUPTION,
+      automaticActivityDetection: {
+        startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+        prefixPaddingMs: 300,
+        silenceDurationMs: 1200,
+      },
+    },
   };
 
   const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1beta" } });

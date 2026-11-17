@@ -42,6 +42,8 @@ export class GeminiLiveClient {
   private closing = false;
   private paused = false;
   private started = false;
+  /** True while Camille is producing / playing a turn — mic audio is not forwarded. */
+  private agentSpeaking = false;
   private micEnabled: boolean;
   private playLocalAudio: boolean;
   private buffers: Record<Role, string> = { agent: "", candidate: "" };
@@ -75,7 +77,8 @@ export class GeminiLiveClient {
     if (this.playLocalAudio) await this.player.resume();
     if (this.micEnabled) {
       await this.mic.start((chunk) => {
-        if (this.paused || !this.started || !this.session) return;
+        // Hold mic while Camille talks so room noise / speaker bleed cannot cut her off.
+        if (this.paused || !this.started || !this.session || this.agentSpeaking) return;
         this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
       });
     }
@@ -141,11 +144,17 @@ export class GeminiLiveClient {
     this.handlers.onError(message);
   }
 
+  private setAgentSpeaking(speaking: boolean) {
+    this.agentSpeaking = speaking;
+    if (this.micEnabled && !this.paused) this.mic.setMuted(speaking);
+  }
+
   private async onMessage(message: LiveServerMessage) {
     const content = message.serverContent;
     if (content) {
       for (const part of content.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
+          this.setAgentSpeaking(true);
           if (this.playLocalAudio) this.player.enqueue(part.inlineData.data);
           this.handlers.onPcm?.(part.inlineData.data);
         }
@@ -154,13 +163,28 @@ export class GeminiLiveClient {
       if (content.inputTranscription?.text && this.micEnabled) {
         this.caption("candidate", content.inputTranscription.text);
       }
-      if (content.outputTranscription?.text) this.caption("agent", content.outputTranscription.text);
+      if (content.outputTranscription?.text) {
+        this.setAgentSpeaking(true);
+        this.caption("agent", content.outputTranscription.text);
+      }
       if (content.interrupted) {
+        // With NO_INTERRUPTION this should be rare; still clear local playback if it happens.
         if (this.playLocalAudio) this.player.interrupt();
         this.flush("agent");
+        this.setAgentSpeaking(false);
       }
       if (content.turnComplete) {
         this.flush();
+        // Wait until local audio (if any) has finished before opening the mic again.
+        const openMic = () => {
+          if (this.closing) return;
+          if (this.playLocalAudio && this.player.isPlaying) {
+            setTimeout(openMic, 150);
+            return;
+          }
+          this.setAgentSpeaking(false);
+        };
+        openMic();
         if (this.endRequested) this.fireEnd();
       }
     }
