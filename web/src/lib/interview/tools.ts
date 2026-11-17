@@ -11,7 +11,7 @@ export const interviewTools: FunctionDeclaration[] = [
   {
     name: "record_candidate_fact",
     description:
-      "Record a useful, appropriate work-related fact the candidate just stated, in their own words. Never record illegal, violent, sexual, abusive, or absurd statements.",
+      "Enregistre une information utile et appropriée liée au travail que le candidat vient de dire, avec ses propres mots. N'enregistre jamais de propos illégaux, violents, sexuels, abusifs ou absurdes.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -19,13 +19,13 @@ export const interviewTools: FunctionDeclaration[] = [
           type: Type.STRING,
           enum: [...FACT_FIELDS],
           description:
-            "name, experience_sector, experience_tasks, availability, shift_preference, salary_expectation, or candidate_question.",
+            "name, experience_sector, experience_tasks, availability, shift_preference, salary_expectation ou candidate_question.",
         },
-        raw: { type: Type.STRING, description: "The candidate's words, as close as possible." },
+        raw: { type: Type.STRING, description: "Les mots du candidat, au plus proche de ce qu'il a dit." },
         normalized: {
           type: Type.STRING,
           description:
-            "Optional. availability: 'immediate' or a YYYY-MM-DD date. shift_preference: a shift from the sheet, 'both', or 'none'. salary_expectation: a number in euros gross per hour. Leave empty if unsure.",
+            "Optionnel. availability: 'immediate' ou une date AAAA-MM-JJ. shift_preference: un horaire de la fiche, 'les deux' ou 'aucun'. salary_expectation: un nombre en euros brut par heure. Laisser vide si incertain.",
         },
       },
       required: ["field", "raw"],
@@ -34,11 +34,11 @@ export const interviewTools: FunctionDeclaration[] = [
   {
     name: "answer_job_question",
     description:
-      "Return facts from the job sheet to answer a candidate question. Reply only with what is returned.",
+      "Retourne les faits de la fiche de poste pour répondre à une question du candidat. Réponds uniquement avec ce qui est retourné.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        topic: { type: Type.STRING, enum: [...JOB_TOPICS], description: "Topic of the question." },
+        topic: { type: Type.STRING, enum: [...JOB_TOPICS], description: "Sujet de la question." },
       },
       required: ["topic"],
     },
@@ -46,34 +46,34 @@ export const interviewTools: FunctionDeclaration[] = [
   {
     name: "end_interview",
     description:
-      "Call once, after thanking the candidate and saying goodbye, when the interview is finished.",
+      "À appeler une fois, après avoir remercié le candidat et dit au revoir, quand l'entretien est terminé.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
 ];
 
 export const UNKNOWN_JOB_INFO =
-  "This information is not on the job sheet. Say the recruiter will follow up.";
+  "Cette information n'est pas dans la fiche du poste. Dis que le recruteur répondra.";
 
 /** Facts only, straight from the job sheet. */
 export function answerJobQuestion(topic: JobTopic, job: JobBrief): string {
-  const hours = job.working_hours.join(" or ");
+  const hours = job.working_hours.join(" ou ");
   switch (topic) {
     case "location":
-      return `The role is in ${job.location}.`;
+      return `Le poste est à ${job.location}.`;
     case "salary":
       return `${job.salary_note}.`;
     case "hours":
-      return `Two possible shifts: ${hours}.`;
+      return `Deux créneaux possibles : ${hours}.`;
     case "tasks":
       return `${job.tasks}.`;
     case "contract":
       return `${job.contract}.`;
     case "start_date":
-      return `The assignment starts on ${job.start_date_fr}.`;
+      return `La mission commence le ${job.start_date_fr}.`;
     case "experience":
       return `${job.experience}.`;
     case "agency":
-      return `The agency is ${job.agency}.`;
+      return `L'agence est ${job.agency}.`;
     default:
       return UNKNOWN_JOB_INFO;
   }

@@ -11,7 +11,7 @@ type Step = "intro" | "mic" | "ready" | "live" | "done";
 type Mode = "audio" | "avatar";
 type Turn = { role: Role; text: string };
 
-const ROLE_LABEL: Record<Role, string> = { agent: "Camille", candidate: "You" };
+const ROLE_LABEL: Record<Role, string> = { agent: "Camille", candidate: "Vous" };
 
 async function postJson<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -20,7 +20,7 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
     body: JSON.stringify(body ?? {}),
   });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
   return data;
 }
 
@@ -65,7 +65,6 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
   textChatRef.current = textChat;
   turnsRef.current = turns;
 
-  // Finished turns are shown and stored one at a time, in order. Text only.
   const addTurn = useCallback(
     (role: Role, text: string) => {
       setTurns((t) => [...t, { role, text }]);
@@ -103,7 +102,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       await requestMicPermission();
       setStep("ready");
     } catch {
-      setMicError("Microphone blocked. Allow it in the browser address bar, then try again.");
+      setMicError("Le micro est bloqué. Autorisez-le dans la barre d'adresse du navigateur, puis réessayez.");
     }
   }
 
@@ -122,7 +121,6 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     };
   }
 
-  /** Shared Gemini connect used by audio and by client-driven avatar. */
   async function connectGemini(opts: {
     enableMic: boolean;
     playLocalAudio: boolean;
@@ -145,7 +143,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     } catch (e) {
       live.close();
       liveRef.current = null;
-      setError(e instanceof Error ? e.message : "Could not connect.");
+      setError(e instanceof Error ? e.message : "Connexion impossible.");
       return false;
     }
   }
@@ -154,10 +152,6 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     return connectGemini({ enableMic: !textChatRef.current, playLocalAudio: true });
   }
 
-  /**
-   * Avatar always runs client-driven Gemini (mic and/or text) so we can kick off speech
-   * with an explicit button. The LiveAvatar Gemini connector alone stays silent until you talk.
-   */
   async function startAvatar(): Promise<boolean> {
     try {
       const info = await postJson<{ sessionToken: string }>("/api/liveavatar/session", {
@@ -178,7 +172,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
         }
       });
       session.on(SessionEvent.SESSION_DISCONNECTED, () => {
-        if (!ending.current) setError("The avatar connection was interrupted.");
+        if (!ending.current) setError("La connexion avec l'avatar s'est interrompue.");
       });
       await session.start();
 
@@ -204,7 +198,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       liveRef.current = null;
       await avatarRef.current?.stop().catch(() => undefined);
       avatarRef.current = null;
-      setError(e instanceof Error ? e.message : "Could not start the avatar.");
+      setError(e instanceof Error ? e.message : "Connexion avatar impossible.");
       return false;
     }
   }
@@ -220,7 +214,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       ok = await startAvatar();
       if (!ok) {
         setMode("audio");
-        setNotice("Avatar unavailable. Continuing in audio-only mode.");
+        setNotice("L'avatar n'est pas disponible. L'entretien continue en audio.");
       }
     }
     if (!ok) ok = await startAudio();
@@ -242,7 +236,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       setAwaitingStart(false);
       if (textChat) setTimeout(() => draftRef.current?.focus(), 100);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start Camille.");
+      setError(e instanceof Error ? e.message : "Impossible de démarrer Camille.");
     } finally {
       setStartingSpeech(false);
     }
@@ -272,8 +266,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     try {
       const res = await fetch(`/api/sessions/${token}/export`);
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { error?: string };
-      if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
-      // Prefer server transcript; fall back to in-memory turns if empty.
+      if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
       const serverTranscript = Array.isArray(data.transcript) ? data.transcript : [];
       if (serverTranscript.length === 0 && turnsRef.current.length) {
         data.transcript = turnsRef.current.map((t, i) => ({
@@ -282,15 +275,14 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
           text: t.text,
         }));
       }
-      downloadJson(`recruitai-interview-${id.slice(0, 8)}.json`, data);
+      downloadJson(`recruitai-entretien-${id.slice(0, 8)}.json`, data);
     } catch (e) {
-      // Offline / failed fetch: still offer local transcript.
-      downloadJson(`recruitai-interview-${id.slice(0, 8)}.json`, {
+      downloadJson(`recruitai-entretien-${id.slice(0, 8)}.json`, {
         exported_at: new Date().toISOString(),
         session: { id, token, status: "completed" },
         report: null,
         transcript: turnsRef.current,
-        note: e instanceof Error ? e.message : "Server export unavailable; local transcript only.",
+        note: e instanceof Error ? e.message : "Export serveur indisponible ; transcript local uniquement.",
       });
     } finally {
       setExporting(false);
@@ -304,12 +296,13 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     return (
       <section className="sheet mt-8 p-8 text-center sm:p-12">
         <span className="mx-auto grid size-12 place-items-center rounded-full bg-teal-soft text-teal">✓</span>
-        <h1 className="display mt-6 text-3xl font-semibold">Thanks — the interview is complete.</h1>
+        <h1 className="display mt-6 text-3xl font-semibold">Merci, l’entretien est terminé.</h1>
         <p className="mx-auto mt-4 max-w-md text-slate">
-          Someone at {payload.agency} will read the report and get back to you. No decision was made by the AI.
+          Une personne de {payload.agency} lira le compte rendu et reviendra vers vous. Aucune décision n’a été prise
+          par l’IA. Vous pouvez fermer cette page.
         </p>
         <button className="btn-primary mt-8" onClick={() => void downloadExport()} disabled={exporting}>
-          {exporting ? "Preparing…" : "Download JSON"}
+          {exporting ? "Préparation…" : "Télécharger le JSON"}
         </button>
       </section>
     );
@@ -322,35 +315,35 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
           <p className="eyebrow">{payload.agency}</p>
           <h1 className="display mt-3 text-3xl font-semibold leading-tight [overflow-wrap:anywhere] sm:text-4xl">{payload.job.title}</h1>
           <dl className="mt-6 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-            <Fact label="Location" value={payload.job.location} />
-            <Fact label="Contract" value={payload.job.contract} />
-            <Fact label="Start" value={payload.job.start_date_fr} />
-            <Fact label="Hours" value={payload.job.working_hours.join(" or ")} />
-            <Fact label="Pay" value={`€${payload.job.salary_gross_hourly_eur.toFixed(2)} gross / hour`} />
-            <Fact label="Tasks" value={payload.job.tasks} />
+            <Fact label="Lieu" value={payload.job.location} />
+            <Fact label="Contrat" value={payload.job.contract} />
+            <Fact label="Début" value={payload.job.start_date_fr} />
+            <Fact label="Horaires" value={payload.job.working_hours.join(" ou ")} />
+            <Fact label="Salaire" value={`${payload.job.salary_gross_hourly_eur.toFixed(2).replace(".", ",")} € brut / heure`} />
+            <Fact label="Tâches" value={payload.job.tasks} />
           </dl>
           <div className="mt-8 rounded-xl border border-teal/20 bg-teal-soft/60 p-5">
-            <p className="text-sm font-semibold text-teal-deep">You are speaking with an AI</p>
+            <p className="text-sm font-semibold text-teal-deep">Vous parlez avec une IA</p>
             <p className="mt-1.5 text-sm leading-relaxed text-ink/85">{payload.ai_disclosure}</p>
           </div>
           <button className="btn-primary mt-8" onClick={() => setStep("mic")}>
-            I understand — continue
+            J’ai compris, continuer
           </button>
         </section>
       )}
 
       {step === "mic" && (
         <section className="sheet p-8 sm:p-10">
-          <h1 className="display text-3xl font-semibold">Allow your microphone</h1>
+          <h1 className="display text-3xl font-semibold">Autorisez votre micro</h1>
           <p className="mt-3 max-w-md text-slate">
-            The interview is voice-first by default. Your browser will ask for mic access. RecruitAI never stores
-            audio — only conversation text is kept.
+            L’entretien se fait à la voix par défaut. Votre navigateur va demander l’accès au micro. L’audio n’est
+            jamais enregistré par RecruitAI : seul le texte de la conversation est conservé.
           </p>
           {micError && <p role="alert" className="mt-4 text-sm text-alert">{micError}</p>}
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <button className="btn-primary" onClick={allowMic}>Allow microphone</button>
+            <button className="btn-primary" onClick={allowMic}>Autoriser le micro</button>
             <button type="button" className="btn-ghost" onClick={continueWithoutMic}>
-              Continue without mic (type replies)
+              Continuer sans micro (réponses à l’écrit)
             </button>
           </div>
         </section>
@@ -358,19 +351,19 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
 
       {step === "ready" && (
         <section className="sheet p-8 sm:p-10">
-          <h1 className="display text-3xl font-semibold">How do you want to interview?</h1>
+          <h1 className="display text-3xl font-semibold">Comment voulez-vous passer l’entretien ?</h1>
           <div role="radiogroup" aria-label="Mode" className="mt-6 grid gap-3 sm:grid-cols-2">
             <ModeOption
               selected={mode === "audio"}
               onSelect={() => setMode("audio")}
-              title="Audio only"
-              text="Talk with Camille with no video. Recommended."
+              title="Audio seul"
+              text="Vous parlez avec Camille, sans image. Recommandé."
             />
             <ModeOption
               selected={mode === "avatar"}
               onSelect={() => setMode("avatar")}
               title="Avatar"
-              text="Sandbox video (Wayne) with a matching male voice. Falls back to audio if unavailable."
+              text="Vidéo bac à sable (Wayne). Voix homme assortie. Bascule en audio si indisponible."
             />
           </div>
 
@@ -382,17 +375,17 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
               onChange={(e) => setTextChat(e.target.checked)}
             />
             <span>
-              <span className="block font-medium">Reply in writing</span>
+              <span className="block font-medium">Répondre à l’écrit</span>
               <span className="mt-1 block text-sm text-slate">
-                Camille still speaks out loud (and the avatar moves). You type your answers — useful for tests without
-                speech recognition.
+                Camille parle toujours à voix haute (et l’avatar bouge). Vous tapez vos réponses — utile pour les tests
+                sans reconnaissance vocale.
               </span>
             </span>
           </label>
 
           {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
           <button className="btn-primary mt-7" onClick={start} disabled={connecting}>
-            Connect
+            Se connecter
           </button>
         </section>
       )}
@@ -402,12 +395,12 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
           {mode === "avatar" ? (
             <div className="relative aspect-video bg-ink">
               <video ref={videoRef} autoPlay playsInline className="size-full object-cover" />
-              {connecting && <Overlay text="Connecting to avatar…" />}
+              {connecting && <Overlay text="Connexion à l’avatar…" />}
             </div>
           ) : (
             <div className="relative grid h-52 place-items-center bg-gradient-to-br from-teal-soft/70 to-sheet">
               <Waveform className={`h-16 gap-1.5 text-teal [&>span]:w-1.5 ${paused || connecting || awaitingStart ? "opacity-30" : ""}`} />
-              {connecting && <Overlay text="Connecting to Camille…" />}
+              {connecting && <Overlay text="Connexion à Camille…" />}
             </div>
           )}
 
@@ -418,8 +411,8 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
             {awaitingStart && !connecting && (
               <div className="mb-6 rounded-xl border border-teal/25 bg-teal-soft/50 p-5 text-center">
                 <p className="text-sm text-ink/85">
-                  Connected. Press to have Camille start speaking
-                  {textChat ? " — then you will reply in writing." : "."}
+                  Connexion prête. Appuyez pour que Camille commence à parler
+                  {textChat ? " — ensuite vous répondrez à l’écrit." : "."}
                 </p>
                 <button
                   type="button"
@@ -427,14 +420,14 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
                   onClick={() => void beginSpeech()}
                   disabled={startingSpeech || paused}
                 >
-                  {startingSpeech ? "Starting…" : "Have Camille speak"}
+                  {startingSpeech ? "Démarrage…" : "Faire parler Camille"}
                 </button>
               </div>
             )}
 
             {textChat && !awaitingStart && (
               <p className="mb-4 text-xs font-medium uppercase tracking-wider text-teal">
-                Text mode · Camille speaks · you type
+                Mode écrit · Camille parle · vous tapez
               </p>
             )}
 
@@ -442,8 +435,8 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
               {lastTurns.length === 0 && !connecting && !awaitingStart && (
                 <p className="text-sm text-mist">
                   {textChat
-                    ? "Camille is speaking. Type your reply below."
-                    : "Captions will appear here when Camille speaks."}
+                    ? "Camille parle. Tapez votre réponse ci-dessous."
+                    : "Les sous-titres apparaîtront ici dès que Camille parle."}
                 </p>
               )}
               {lastTurns.map((t, i) => (
@@ -462,7 +455,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
                   sendDraft();
                 }}
               >
-                <label className="sr-only" htmlFor="interview-draft">Your reply</label>
+                <label className="sr-only" htmlFor="interview-draft">Votre réponse</label>
                 <textarea
                   id="interview-draft"
                   ref={draftRef}
@@ -476,25 +469,25 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
                       sendDraft();
                     }
                   }}
-                  placeholder="Type your reply… (Enter to send)"
+                  placeholder="Écrivez votre réponse… (Entrée pour envoyer)"
                   className="min-h-[3rem] w-full flex-1 resize-y rounded-xl border border-line bg-paper px-4 py-3 text-sm text-ink outline-none focus:border-teal disabled:opacity-50"
                 />
                 <button type="submit" className="btn-primary shrink-0" disabled={paused || connecting || !draft.trim()}>
-                  Send
+                  Envoyer
                 </button>
               </form>
             )}
 
             <div className={`flex flex-wrap items-center gap-3 ${textChat && !awaitingStart ? "mt-4" : "mt-6 border-t border-line pt-5"}`}>
               <button className="btn-ghost" onClick={togglePause} disabled={connecting || awaitingStart}>
-                {paused ? "Resume" : "Pause"}
+                {paused ? "Reprendre" : "Pause"}
               </button>
               <button className="btn-danger" onClick={() => void endInterview()}>
-                End interview
+                Terminer l’entretien
               </button>
               {paused && (
                 <span className="text-sm text-mist">
-                  {textChat ? "Paused: messaging is suspended." : "Paused: nothing is being listened to."}
+                  {textChat ? "En pause : l’envoi de messages est suspendu." : "En pause : rien n’est écouté."}
                 </span>
               )}
             </div>

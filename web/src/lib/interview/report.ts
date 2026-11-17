@@ -53,19 +53,19 @@ export function buildReport(input: {
 
   const availability = memory.availability?.normalized;
   if (availability && availability !== "immediate" && availability > job.start_date) {
-    points.push(`Declared availability (${availability}) is after the assignment start (${job.start_date}).`);
+    points.push(`Disponibilité déclarée (${availability}) après le début de mission (${job.start_date}).`);
   }
   const salary = Number(memory.salary_expectation?.normalized);
   if (memory.salary_expectation?.normalized && salary !== job.salary_gross_hourly_eur) {
     points.push(
-      `Declared pay expectation: ${salary} € gross/h. Job sheet rate: ${job.salary_gross_hourly_eur} € gross/h.`,
+      `Attente salariale déclarée : ${salary} € brut/h. Salaire de la fiche : ${job.salary_gross_hourly_eur} € brut/h.`,
     );
   }
   if (memory.shift_preference?.normalized === "aucun" || memory.shift_preference?.normalized === "none") {
-    points.push("The candidate said none of the offered shifts work for them.");
+    points.push("Le candidat a déclaré qu'aucun des créneaux proposés ne lui convient.");
   }
   if (memory.candidate_question.length) {
-    points.push("The candidate asked questions — review them.");
+    points.push("Le candidat a posé des questions : à relire.");
   }
 
   return {
@@ -99,6 +99,6 @@ export function buildReport(input: {
     ranking: null,
     hiring_recommendation: null,
     notice:
-      "Factual report generated from the candidate's statements. No score, ranking, or hiring recommendation: a human recruiter decides.",
+      "Compte rendu factuel généré à partir des déclarations du candidat. Aucun score, classement ou recommandation d'embauche : la décision revient à un recruteur humain.",
   };
 }
