@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckIcon, DownloadIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
+import { Brand } from "@/components/brand";
 import { CallRoom, type CallPhase, type Caption } from "@/components/interview/call-room";
 import { useCamera, useMicCheck } from "@/components/interview/devices";
 import { Lobby } from "@/components/interview/lobby";
-import { Button } from "@/components/ui/button";
 import { postJson, type EngineHandlers, type InterviewEngine } from "@/lib/client/engine";
 import { startInterview } from "@/lib/client/start-interview";
 import type { CandidateSessionPayload, EndReason } from "@/lib/db/types";
@@ -50,7 +50,8 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
   const mic = useMicCheck();
   const camera = useCamera();
   const stopCamera = camera.stop;
-  const releaseMicCheck = mic.release;
+  const takeMicStream = mic.takeStream;
+  const enableMic = mic.enable;
 
   const showCaption = useCallback((next: Caption) => {
     setCaption(next);
@@ -76,81 +77,107 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
   );
 
   /** Must run straight from a click: browsers only let audio and video start on a user gesture. */
-  const join = useCallback(() => {
-    if (endingRef.current) return;
-    const attempt = { failed: false };
-    setJoinError(null);
-    setCallError(null);
-    setNotice(null);
-    setJoining(true);
-    setPhase("connecting");
-    setStep("call");
-    releaseMicCheck(); // the call opens its own microphone capture
+  const join = useCallback(
+    (micStream: MediaStream | null) => {
+      if (endingRef.current) return;
+      const attempt = { failed: false };
+      setJoinError(null);
+      setCallError(null);
+      setNotice(null);
+      setJoining(true);
+      setPhase("connecting");
+      setStep("call");
 
-    const fail = (message: string) => {
-      attempt.failed = true;
-      engineRef.current?.close();
-      engineRef.current = null;
-      setJoining(false);
-      setAgentSpeaking(false);
-      setCandidateSpeaking(false);
-      setVideoActive(false);
-      if (everLiveRef.current) {
-        setCallError(message);
-        setPhase("error");
-      } else {
-        // Never connected: back to the waiting room with the reason.
-        setJoinError(message);
-        setStep("lobby");
-      }
-    };
-
-    const handlers: EngineHandlers = {
-      onCaption: (role, text) => showCaption({ role, text }),
-      onTurn: (role, text) => showCaption({ role, text }),
-      onProgress: setProgress,
-      onAgentSpeaking: setAgentSpeaking,
-      onCandidateSpeaking: setCandidateSpeaking,
-      onVideo: setVideoActive,
-      onNotice: setNotice,
-      onEnded: () => void end("completed"),
-      onError: fail,
-    };
-
-    startInterview({
-      token,
-      wantVideo: experience.video,
-      video: videoRef.current,
-      micEnabled: !typedRepliesRef.current,
-      handlers,
-    })
-      .then(({ engine, needsClick }) => {
-        if (attempt.failed || endingRef.current) {
-          engine.close();
-          return;
-        }
-        engineRef.current = engine;
-        void engine.setMicMuted(micMutedRef.current);
-        everLiveRef.current = true;
-        setStartedAt((t) => t ?? Date.now());
+      const fail = (message: string) => {
+        attempt.failed = true;
+        engineRef.current?.close();
+        engineRef.current = null;
+        micStream?.getTracks().forEach((t) => t.stop());
         setJoining(false);
-        setPhase(needsClick ? "ready" : "live");
-      })
-      .catch((err: unknown) => {
-        if (!attempt.failed) fail(err instanceof Error ? err.message : "Connexion impossible.");
-      });
-  }, [token, experience.video, end, showCaption, releaseMicCheck]);
+        setAgentSpeaking(false);
+        setCandidateSpeaking(false);
+        setVideoActive(false);
+        if (everLiveRef.current) {
+          setCallError(message);
+          setPhase("error");
+        } else {
+          // Never connected: back to the waiting room with the reason.
+          setJoinError(message);
+          setStep("lobby");
+        }
+      };
 
-  /** From the waiting room: with the mic, or answering in writing without one. */
+      const handlers: EngineHandlers = {
+        onCaption: (role, text) => showCaption({ role, text }),
+        onTurn: (role, text) => showCaption({ role, text }),
+        onProgress: setProgress,
+        onAgentSpeaking: setAgentSpeaking,
+        onCandidateSpeaking: setCandidateSpeaking,
+        onVideo: setVideoActive,
+        onNotice: setNotice,
+        onEnded: () => void end("completed"),
+        onError: fail,
+      };
+
+      startInterview({
+        token,
+        wantVideo: experience.video,
+        video: videoRef.current,
+        micEnabled: !typedRepliesRef.current,
+        micStream,
+        handlers,
+      })
+        .then(({ engine, needsClick }) => {
+          if (attempt.failed || endingRef.current) {
+            engine.close();
+            return;
+          }
+          engineRef.current = engine;
+          void engine.setMicMuted(micMutedRef.current);
+          everLiveRef.current = true;
+          setStartedAt((t) => t ?? Date.now());
+          setJoining(false);
+          setPhase(needsClick ? "ready" : "live");
+        })
+        .catch((err: unknown) => {
+          if (!attempt.failed) fail(err instanceof Error ? err.message : "Connexion impossible.");
+        });
+    },
+    [token, experience.video, end, showCaption],
+  );
+
+  /**
+   * From the waiting room. Voice join requests the mic inside this click when needed so iOS
+   * keeps the user gesture for getUserMedia + audio unlock.
+   */
   const joinFromLobby = useCallback(
     (typed: boolean) => {
       typedRepliesRef.current = typed;
       setTypedReplies(typed);
       micMutedRef.current = typed;
       setMicMuted(typed);
-      join();
+      if (typed) {
+        takeMicStream()?.getTracks().forEach((t) => t.stop());
+        join(null);
+        return;
+      }
+      // Mic already open: stay synchronous so AudioContext/TTS unlock stay in the gesture.
+      if (mic.state === "ready") {
+        join(takeMicStream());
+        return;
+      }
+      setJoining(true);
+      setJoinError(null);
+      void enableMic().then((ok) => {
+        if (!ok) {
+          setJoining(false);
+          setJoinError("Autorisez le micro, ou continuez avec « Sans micro ».");
+          return;
+        }
+        join(takeMicStream());
+      });
     },
-    [join],
+    [join, takeMicStream, enableMic, mic.state],
   );
 
   const toggleMic = useCallback(() => {
@@ -189,17 +216,26 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
     [],
   );
 
+  const finished = step === "done";
+
   return (
     <>
+      {step !== "call" && (
+        <header className="flex items-center px-4 py-4 sm:px-6">
+          {/* Clickable only when finished — leaving mid-interview would end the session by mistake. */}
+          <Brand href={finished ? "/" : null} />
+        </header>
+      )}
+
       {step === "lobby" && (
         <Lobby payload={payload} mic={mic} camera={camera} joining={joining} error={joinError} onJoin={joinFromLobby} />
       )}
 
-      {step === "done" && (
-        <Goodbye token={token} agency={payload.agency} reason={alreadyDone ? "already" : (endReason ?? "completed")} />
+      {finished && (
+        <Goodbye agency={payload.agency} reason={alreadyDone ? "already" : (endReason ?? "completed")} />
       )}
 
-      {step !== "done" && (
+      {!finished && (
         <CallRoom
           visible={step === "call"}
           phase={phase}
@@ -225,7 +261,7 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
           onSendText={sendText}
           onDismissNotice={dismissNotice}
           onStartSpeaking={startSpeaking}
-          onRetry={join}
+          onRetry={() => join(null)}
           onLeave={leave}
         />
       )}
@@ -233,7 +269,7 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
   );
 }
 
-function Goodbye({ token, agency, reason }: { token: string; agency: string; reason: EndReason | "already" }) {
+function Goodbye({ agency, reason }: { agency: string; reason: EndReason | "already" }) {
   const title =
     reason === "already"
       ? "Cet entretien est déjà terminé."
@@ -241,22 +277,15 @@ function Goodbye({ token, agency, reason }: { token: string; agency: string; rea
         ? "Vous avez quitté l’entretien."
         : "Merci, l’entretien est terminé.";
   return (
-    <section className="mx-auto mt-10 w-full max-w-xl px-6 pb-20 text-center motion-safe:animate-rise">
-      <span className="mx-auto grid size-14 place-items-center rounded-full bg-accent text-accent-foreground">
+    <section className="mx-auto flex min-h-[calc(100svh-4.5rem)] w-full max-w-xl flex-col items-center justify-center px-6 pb-16 text-center motion-safe:animate-rise">
+      <span className="grid size-14 place-items-center rounded-full bg-accent text-accent-foreground">
         <CheckIcon className="size-6" />
       </span>
       <h1 className="display mt-6 text-3xl font-semibold sm:text-4xl">{title}</h1>
       <p className="mx-auto mt-4 max-w-md text-muted-foreground">
-        Une personne {ofName(agency).replace("'", "’")} lit le compte rendu et revient vers vous. L’IA n’a pris aucune décision et n’a
-        attribué aucune note. Seul le texte de la conversation est conservé.
+        Une personne {ofName(agency).replace("'", "’")} lit le compte rendu et revient vers vous.
       </p>
-      {/* Raphaël's download: the candidate keeps a copy of the conversation and of the report. */}
-      <Button asChild variant="outline" className="mt-8 rounded-full px-5">
-        <a href={`/api/sessions/${token}/export`} download>
-          <DownloadIcon /> Télécharger l’entretien (JSON)
-        </a>
-      </Button>
-      <p className="mt-6 text-sm text-muted-foreground">Vous pouvez fermer cette page.</p>
+      <p className="mt-6 text-sm text-muted-foreground">Vous pouvez fermer cette page, ou cliquer sur le logo pour revenir à l’accueil.</p>
     </section>
   );
 }

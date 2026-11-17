@@ -78,7 +78,11 @@ export function CallRoom({
 
   return (
     <div
-      className={cn("paper fixed inset-0 z-40 flex h-dvh flex-col text-foreground", !visible && "hidden")}
+      className={cn(
+        "paper fixed inset-0 z-40 flex h-dvh flex-col text-foreground",
+        // Keep the video element layout-alive (not display:none) so iOS can unlock playback on join.
+        !visible && "invisible pointer-events-none",
+      )}
       aria-hidden={!visible}
     >
       <header className="flex items-center gap-3 px-4 py-3 sm:px-6">
@@ -219,7 +223,7 @@ export function CallRoom({
 
       {typing && phase === "live" && <TypeAnswer persona={persona} autoFocus={typedReplies} onSend={onSendText} />}
 
-      <footer className="flex items-center justify-center gap-2 px-4 pb-5 pt-4 sm:gap-3">
+      <footer className="flex items-center justify-center gap-2 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:gap-3">
         <ControlButton
           label={micMuted ? (typedReplies ? "Activer le micro" : "Réactiver le micro") : "Couper le micro"}
           active={!micMuted}

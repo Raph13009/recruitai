@@ -43,6 +43,7 @@ export class GeminiEngine implements InterviewEngine {
   private micStarted = false;
   private micStarting: Promise<boolean> | null = null;
   private micDeviceId: string | undefined;
+  private pendingMicStream: MediaStream | null = null;
   private buffers: Record<Role, string> = { agent: "", candidate: "" };
   private saveQueue: Promise<unknown> = Promise.resolve();
   private endRequested = false;
@@ -100,7 +101,13 @@ export class GeminiEngine implements InterviewEngine {
   /** `micEnabled: false` starts without a mic: the candidate types, the interviewer still speaks. */
   async connect(
     info: LiveTokenInfo,
-    opts: { micDeviceId?: string; resumed?: boolean; micEnabled?: boolean } = {},
+    opts: {
+      micDeviceId?: string;
+      resumed?: boolean;
+      micEnabled?: boolean;
+      /** Reuse the lobby mic track when present (mobile). */
+      micStream?: MediaStream | null;
+    } = {},
   ): Promise<void> {
     // Ephemeral tokens work with Live API on the v1beta endpoint.
     const ai = new GoogleGenAI({ apiKey: info.token, httpOptions: { apiVersion: "v1beta" } });
@@ -113,10 +120,15 @@ export class GeminiEngine implements InterviewEngine {
         onclose: () => this.fail("La connexion vocale s'est interrompue."),
       },
     });
-    await this.speaker.unlock(); // still within the join click's activation; checked again before speaking
+    await this.speaker.unlock(); // resume speakers; checked again before speaking
     this.micDeviceId = opts.micDeviceId;
-    if (opts.micEnabled === false) this.muted = true;
-    else await this.startMic();
+    this.pendingMicStream = opts.micStream ?? null;
+    if (opts.micEnabled === false) {
+      this.muted = true;
+      // Lobby handed us a stream we will not use for typed mode.
+      this.pendingMicStream?.getTracks().forEach((t) => t.stop());
+      this.pendingMicStream = null;
+    } else await this.startMic();
     this.ticker = setInterval(() => this.tick(), 100);
     const typed = opts.micEnabled === false ? " Le candidat n'a pas de micro : il répond par écrit, tu l'entends en texte." : "";
     // Sent by begin(), once the candidate can hear (Raphaël's "Faire parler Camille", 77d7318).
@@ -191,6 +203,8 @@ export class GeminiEngine implements InterviewEngine {
     if (this.releaseTimer) clearTimeout(this.releaseTimer);
     if (this.nudgeTimer) clearTimeout(this.nudgeTimer);
     this.flush();
+    this.pendingMicStream?.getTracks().forEach((t) => t.stop());
+    this.pendingMicStream = null;
     this.mic.stop();
     this.speaker.close();
     void this.avatar?.stop();
@@ -202,6 +216,8 @@ export class GeminiEngine implements InterviewEngine {
   // ---------- internals ----------
 
   private async startMic() {
+    const existing = this.pendingMicStream;
+    this.pendingMicStream = null;
     await this.mic.start(
       (chunk) => {
         // Held while the interviewer talks: noise and echo must not reach the model.
@@ -210,6 +226,7 @@ export class GeminiEngine implements InterviewEngine {
       },
       (level) => this.onMicLevel(this.agentTalking ? 0 : level),
       this.micDeviceId,
+      existing,
     );
     if (this.closing) {
       this.mic.stop(); // the call ended while the browser was opening the mic

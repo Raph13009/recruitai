@@ -33,11 +33,9 @@ export function Lobby({
   /** `typed`: join without a mic and answer in writing (the interviewer still speaks). */
   onJoin: (typed: boolean) => void;
 }) {
-  const { job, experience } = payload;
-  const demo = experience.engine === "demo";
+  const { job } = payload;
   const micReady = mic.state === "ready";
-  // The demo also accepts typed answers, so the mic is optional there.
-  const canJoin = micReady || demo;
+  // Rejoindre stays available: mic permission is requested inside the click (needed on mobile).
 
   return (
     <div className="flex min-h-[calc(100svh-4.5rem)] flex-col items-center justify-center px-4 pb-10 sm:px-6">
@@ -101,7 +99,7 @@ export function Lobby({
             size="lg"
             className="h-11 rounded-full px-6 text-base"
             onClick={() => onJoin(false)}
-            disabled={!canJoin || joining}
+            disabled={joining || mic.state === "denied" || mic.state === "unavailable"}
           >
             {joining ? <Loader2Icon className="animate-spin" /> : <VideoIcon />}
             {joining ? "Connexion…" : "Rejoindre"}

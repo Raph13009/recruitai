@@ -1,4 +1,5 @@
 import { postJson, type EngineHandlers, type InterviewEngine } from "@/lib/client/engine";
+import { probeSpeechUnlock } from "@/lib/client/media-unlock";
 import type { DemoStep } from "@/lib/interview/demo-engine";
 import type { InterviewProgress } from "@/lib/interview/progress";
 
@@ -119,7 +120,8 @@ export class DemoVoiceEngine implements InterviewEngine {
   }
 
   async unlock(): Promise<boolean> {
-    return true; // the browser's speech engine gives no signal to check
+    // iOS Safari blocks speak() outside a gesture; return false so the UI shows "Faire parler".
+    return probeSpeechUnlock();
   }
 
   begin() {

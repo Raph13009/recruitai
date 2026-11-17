@@ -1,6 +1,8 @@
 // Browser audio helpers for the live interview:
 // mic -> 16 kHz PCM16 (base64) for the voice model, PCM16 24 kHz (base64) -> speakers.
 
+import { createResumedAudioContext } from "@/lib/client/media-unlock";
+
 export const MIC_SAMPLE_RATE = 16000;
 export const PLAYBACK_SAMPLE_RATE = 24000;
 
@@ -101,10 +103,17 @@ export class MicCapture {
   /**
    * `onChunk` receives base64 PCM16 mono 16 kHz. Nothing is sent while muted.
    * `onLevel` receives the mic loudness (0 to 1) about 30 times a second, 0 while muted.
+   * Pass `existingStream` to reuse a lobby mic track (avoids a second permission prompt on mobile).
    */
-  async start(onChunk: (base64Pcm: string) => void, onLevel?: (level: number) => void, deviceId?: string): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(deviceId) });
-    this.ctx = new AudioContext();
+  async start(
+    onChunk: (base64Pcm: string) => void,
+    onLevel?: (level: number) => void,
+    deviceId?: string,
+    existingStream?: MediaStream | null,
+  ): Promise<void> {
+    this.stream =
+      existingStream ?? (await navigator.mediaDevices.getUserMedia({ audio: micConstraints(deviceId) }));
+    this.ctx = await createResumedAudioContext();
     const url = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
     try {
       await this.ctx.audioWorklet.addModule(url);
@@ -139,15 +148,37 @@ export class MicCapture {
 
 /** Plays PCM16 24 kHz chunks back to back on the speakers (one queue, so turns never overlap). */
 export class PcmPlayer implements AudioSink {
-  private ctx = new AudioContext();
-  private analyser = this.ctx.createAnalyser();
+  private ctx: AudioContext;
+  private analyser: AnalyserNode;
   private scope = new Uint8Array(256);
   private nextTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
+  private ready: Promise<void>;
 
   constructor() {
+    // Constructor stays sync so it can run inside the join click. Resume finishes in the background.
+    const Ctor =
+      (typeof window !== "undefined" &&
+        ((window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)) ||
+      AudioContext;
+    this.ctx = new Ctor();
+    this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.connect(this.ctx.destination);
+    this.ready =
+      this.ctx.state === "suspended"
+        ? this.ctx.resume().then(() => undefined).catch(() => undefined)
+        : Promise.resolve();
+  }
+
+  /** Wait until the context is running (call after construction, still near the user gesture). */
+  async prepare(): Promise<boolean> {
+    await Promise.race([this.ready, new Promise((r) => setTimeout(r, 400))]);
+    if (this.ctx.state === "suspended") {
+      await Promise.race([this.ctx.resume().catch(() => undefined), new Promise((r) => setTimeout(r, 400))]);
+    }
+    return this.ctx.state === "running";
   }
 
   enqueue(base64Pcm: string) {

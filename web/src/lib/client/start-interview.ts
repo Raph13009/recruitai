@@ -3,6 +3,7 @@ import { connectAvatar } from "@/lib/client/avatar";
 import { DemoVoiceEngine } from "@/lib/client/demo-voice";
 import { postJson, type EngineHandlers, type InterviewEngine } from "@/lib/client/engine";
 import { GeminiEngine, type LiveTokenInfo } from "@/lib/client/gemini-live";
+import { primeSpeechSynthesis } from "@/lib/client/media-unlock";
 
 interface LiveResponse {
   engine: "gemini" | "demo";
@@ -24,6 +25,8 @@ export interface StartOptions {
   micDeviceId?: string;
   /** False when the candidate answers in writing: the interviewer still speaks, no mic is opened. */
   micEnabled?: boolean;
+  /** Lobby mic track to reuse (keeps the mobile permission sticky across join). */
+  micStream?: MediaStream | null;
   handlers: EngineHandlers;
 }
 
@@ -52,19 +55,23 @@ async function opening(engine: InterviewEngine): Promise<StartedInterview> {
  * one, then the voice. Must be called straight from a click handler so audio is allowed to start.
  */
 export async function startInterview(opts: StartOptions): Promise<StartedInterview> {
-  // Created before any await: the AudioContext needs the user gesture.
+  // Still inside the click: unlock TTS + AudioContext before any network await (critical on iOS).
+  primeSpeechSynthesis();
   const speaker = new PcmPlayer();
+  void speaker.prepare();
 
   let info: LiveResponse;
   try {
     info = await postJson<LiveResponse>(`/api/sessions/${opts.token}/live`, { video: opts.wantVideo });
   } catch (err) {
     speaker.close();
+    opts.micStream?.getTracks().forEach((t) => t.stop());
     throw err;
   }
 
   if (info.engine === "demo" || !info.gemini) {
     speaker.close();
+    opts.micStream?.getTracks().forEach((t) => t.stop());
     const demo = new DemoVoiceEngine(opts.token, opts.handlers, {
       masculineVoice: info.masculineVoice === true,
       micEnabled: opts.micEnabled,
@@ -91,9 +98,15 @@ export async function startInterview(opts: StartOptions): Promise<StartedIntervi
   }
 
   try {
-    await engine.connect(info.gemini, { micDeviceId: opts.micDeviceId, resumed: info.resumed, micEnabled: opts.micEnabled });
+    await engine.connect(info.gemini, {
+      micDeviceId: opts.micDeviceId,
+      resumed: info.resumed,
+      micEnabled: opts.micEnabled,
+      micStream: opts.micStream,
+    });
   } catch (err) {
     engine.close();
+    opts.micStream?.getTracks().forEach((t) => t.stop());
     throw err instanceof Error && err.name === "NotAllowedError"
       ? new Error("Le micro est bloqué. Autorisez-le dans la barre d'adresse du navigateur, puis réessayez.")
       : new Error("Impossible de démarrer la voix de l'entretien. Vérifiez votre connexion, puis réessayez.");

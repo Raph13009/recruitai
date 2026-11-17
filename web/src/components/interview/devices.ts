@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { micConstraints } from "@/lib/client/audio";
+import { createResumedAudioContext } from "@/lib/client/media-unlock";
 
 export type MicState = "idle" | "requesting" | "ready" | "denied" | "unavailable";
 
 /**
  * Mic check for the waiting room: asks for permission and exposes a live level.
- * The stream is only used for the meter and is released before the call starts
- * (the call opens its own capture).
+ * `takeStream()` hands the live track to the call without stopping it (mobile-friendly).
  */
 export function useMicCheck() {
   const [state, setState] = useState<MicState>("idle");
@@ -26,6 +26,17 @@ export function useMicCheck() {
     setState((s) => (s === "ready" ? "idle" : s));
   }, []);
 
+  /** Detach the live mic stream for the call. Tracks stay active; lobby meter stops. */
+  const takeStream = useCallback((): MediaStream | null => {
+    const current = stream.current;
+    stream.current = null;
+    void context.current?.close();
+    context.current = null;
+    analyser.current = null;
+    if (current) setState("idle");
+    return current;
+  }, []);
+
   const enable = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       setState("unavailable");
@@ -35,7 +46,7 @@ export function useMicCheck() {
     try {
       release();
       stream.current = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
-      context.current = new AudioContext();
+      context.current = await createResumedAudioContext();
       analyser.current = context.current.createAnalyser();
       analyser.current.fftSize = 256;
       context.current.createMediaStreamSource(stream.current).connect(analyser.current);
@@ -63,7 +74,7 @@ export function useMicCheck() {
 
   useEffect(() => release, [release]);
 
-  return { state, enable, release, getLevel };
+  return { state, enable, release, takeStream, getLevel };
 }
 
 /**
