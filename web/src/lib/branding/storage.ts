@@ -51,7 +51,7 @@ export async function uploadAgencyAsset(agencyId: string, kind: BrandingKind, fi
   await fs.mkdir(dir, { recursive: true });
   await Promise.all(EXTENSIONS.map((e) => fs.rm(path.join(dir, `${kind}${e}`), { force: true })));
   await fs.writeFile(path.join(dir, `${kind}${ext}`), buffer);
-  return `/api/branding/${agencyId}/${kind}`;
+  return `/api/branding/${agencyId}/${kind}?v=${Date.now()}`;
 }
 
 export async function removeAgencyAsset(agencyId: string, kind: BrandingKind): Promise<void> {

@@ -7,6 +7,7 @@ import { CallRoom, type CallPhase, type Caption } from "@/components/interview/c
 import { useCamera, useMicCheck } from "@/components/interview/devices";
 import { Lobby } from "@/components/interview/lobby";
 import { AgencyBanner } from "@/components/recruiter/agency-banner";
+import { accentVars } from "@/lib/branding";
 import { postJson, type EngineHandlers, type InterviewEngine } from "@/lib/client/engine";
 import { startInterview } from "@/lib/client/start-interview";
 import type { CandidateSessionPayload, EndReason } from "@/lib/db/types";
@@ -220,7 +221,7 @@ export function InterviewFlow({ payload }: { payload: CandidateSessionPayload })
   const finished = step === "done";
 
   // The agency's accent recolours the buttons, focus rings and highlights of the whole journey.
-  const accent = { "--agency-accent": branding.accent_color, "--primary": branding.accent_color, "--brand": branding.accent_color, "--ring": branding.accent_color } as React.CSSProperties;
+  const accent = accentVars(branding.accent_color) as React.CSSProperties;
 
   return (
     <div style={accent}>

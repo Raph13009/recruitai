@@ -1,7 +1,7 @@
 // web/src/lib/branding.test.ts
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_ACCENT, defaultBranding, isAccentColor, withBranding,
+  DEFAULT_ACCENT, accentForeground, accentVars, defaultBranding, isAccentColor, withBranding,
 } from "@/lib/branding";
 
 describe("branding", () => {
@@ -38,5 +38,17 @@ describe("branding", () => {
     });
     expect(agency.branding.accent_color).toBe(DEFAULT_ACCENT);
     expect(agency.branding.logo_url).toBeNull();
+  });
+
+  it("picks a readable foreground for the accent", () => {
+    expect(accentForeground("#0f6b5c")).toBe("#ffffff");
+    expect(accentForeground("#000000")).toBe("#ffffff");
+    expect(accentForeground("#ffffff")).toBe("#0a1f1b");
+    expect(accentForeground("#facc15")).toBe("#0a1f1b");
+  });
+
+  it("builds accent variables and falls back on invalid colours", () => {
+    expect(accentVars("#facc15")["--primary-foreground"]).toBe("#0a1f1b");
+    expect(accentVars("red")["--primary"]).toBe(DEFAULT_ACCENT);
   });
 });

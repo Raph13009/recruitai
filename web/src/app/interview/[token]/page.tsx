@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Brand } from "@/components/brand";
 import { InterviewFlow } from "@/components/interview/interview-flow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getSessionContext, toCandidatePayload } from "@/lib/db";
@@ -12,10 +11,6 @@ export const metadata = { title: "Entretien", robots: { index: false, follow: fa
 export default function InterviewPage({ params }: PageProps<"/interview/[token]">) {
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="flex items-center px-4 py-4 sm:px-6">
-        {/* No link on the logo: leaving by mistake would end the interview. */}
-        <Brand href={null} />
-      </header>
       <main className="flex-1">
         <Suspense fallback={<LobbySkeleton />}>
           <Room params={params} />
@@ -37,7 +32,7 @@ async function Room({ params }: Pick<PageProps<"/interview/[token]">, "params">)
 
 function LobbySkeleton() {
   return (
-    <div aria-hidden className="flex min-h-[calc(100svh-4.5rem)] flex-col items-center justify-center px-4">
+    <div aria-hidden className="flex min-h-svh flex-col items-center justify-center px-4">
       <div className="w-full max-w-2xl space-y-4">
         <Skeleton className="h-8 w-2/3" />
         <Skeleton className="aspect-video w-full rounded-2xl" />
