@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AgencyAccent } from "@/components/recruiter/agency-accent";
 import { AgencyBanner } from "@/components/recruiter/agency-banner";
 import { AppSidebar } from "@/components/recruiter/app-sidebar";
@@ -9,19 +10,47 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function RecruiterLayout({ children }: LayoutProps<"/recruiter">) {
-  // Await once: avoids Suspense fallback/shape mismatches (React #418/#441) between a
-  // placeholder `div` and the real sidebar `aside`.
-  const recruiter = await requireRecruiter();
-
+/**
+ * Cookies / session stay inside Suspense so /recruiter* can prerender the shell
+ * (Next Cache Components). Accent is applied client-side to avoid streaming a
+ * raw `<style>` tag (React hydration #418/#441).
+ */
+export default function RecruiterLayout({ children }: LayoutProps<"/recruiter">) {
   return (
     <SidebarProvider>
-      <AgencyAccent accent={recruiter.agency.branding.accent_color} />
-      <AppSidebar recruiter={recruiter} />
+      <Suspense fallback={null}>
+        <AgencyAccentLoader />
+      </Suspense>
+      <Suspense
+        fallback={
+          <div
+            aria-hidden
+            className="hidden w-(--sidebar-width) shrink-0 border-r bg-sidebar md:block"
+          />
+        }
+      >
+        <RecruiterSidebar />
+      </Suspense>
       <SidebarInset>
-        <AgencyBanner url={recruiter.agency.branding.banner_url} />
+        <Suspense fallback={null}>
+          <RecruiterBanner />
+        </Suspense>
         {children}
       </SidebarInset>
     </SidebarProvider>
   );
+}
+
+async function AgencyAccentLoader() {
+  const { agency } = await requireRecruiter();
+  return <AgencyAccent accent={agency.branding.accent_color} />;
+}
+
+async function RecruiterSidebar() {
+  return <AppSidebar recruiter={await requireRecruiter()} />;
+}
+
+async function RecruiterBanner() {
+  const { agency } = await requireRecruiter();
+  return <AgencyBanner url={agency.branding.banner_url} />;
 }
