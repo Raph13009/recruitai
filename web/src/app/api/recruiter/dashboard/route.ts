@@ -1,8 +1,8 @@
-import { connection } from "next/server";
+import { recruiterOr401 } from "@/lib/api";
 import { getDashboard } from "@/lib/db";
 
-// Recruiter data from Supabase (or mock). No auth yet: add Supabase Auth + RLS before exposing this.
 export async function GET() {
-  await connection(); // read per request, never at build time
-  return Response.json(await getDashboard());
+  const auth = await recruiterOr401();
+  if ("error" in auth) return auth.error;
+  return Response.json({ agency: auth.recruiter.agency, ...(await getDashboard(auth.recruiter.agency.id)) });
 }

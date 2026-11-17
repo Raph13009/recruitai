@@ -1,6 +1,7 @@
 import type { CandidateMemory, Fact } from "@/lib/interview/memory";
 import { missingFields } from "@/lib/interview/memory";
-import type { JobBrief } from "@/lib/job";
+import { formatEur } from "@/lib/format";
+import { formatFrDate, isIsoDate, type JobBrief } from "@/lib/job";
 
 // Factual report only. No score, no ranking, no recommendation: those fields exist so it is explicit they are empty.
 
@@ -10,12 +11,17 @@ export interface ReportFact {
 }
 
 export interface InterviewReport {
-  version: 1;
+  version: 2;
   generated_at: string;
   session_id: string;
   candidate_label: string;
   is_synthetic: boolean;
   mode: "audio" | "avatar" | null;
+  /** "demo" = scripted engine with the browser's voice, used when no voice model is configured. */
+  engine: "gemini" | "demo" | null;
+  /** "left" = the candidate hung up before the interviewer closed the interview. */
+  end_reason: "completed" | "left" | null;
+  duration_seconds: number | null;
   job: { agency: string; title: string; location: string; start_date: string; working_hours: string[]; salary_gross_hourly_eur: number };
   declared: {
     name: ReportFact | null;
@@ -43,6 +49,9 @@ export function buildReport(input: {
   candidateLabel: string;
   isSynthetic: boolean;
   mode: "audio" | "avatar" | null;
+  engine?: "gemini" | "demo" | null;
+  endReason?: "completed" | "left" | null;
+  durationSeconds?: number | null;
   job: JobBrief;
   memory: CandidateMemory;
   transcriptTurns: number;
@@ -52,29 +61,37 @@ export function buildReport(input: {
   const points: string[] = [];
 
   const availability = memory.availability?.normalized;
-  if (availability && availability !== "immediate" && availability > job.start_date) {
-    points.push(`Disponibilité déclarée (${availability}) après le début de mission (${job.start_date}).`);
+  if (availability && isIsoDate(availability) && availability > job.start_date) {
+    points.push(
+      `Disponibilité déclarée à partir du ${formatFrDate(availability)}, après le début de mission (${job.start_date_fr}).`,
+    );
   }
   const salary = Number(memory.salary_expectation?.normalized);
   if (memory.salary_expectation?.normalized && salary !== job.salary_gross_hourly_eur) {
     points.push(
-      `Attente salariale déclarée : ${salary} € brut/h. Salaire de la fiche : ${job.salary_gross_hourly_eur} € brut/h.`,
+      `Attente salariale déclarée : ${formatEur(salary)} brut/h. Salaire de la fiche : ${formatEur(job.salary_gross_hourly_eur)} brut/h.`,
     );
   }
-  if (memory.shift_preference?.normalized === "aucun" || memory.shift_preference?.normalized === "none") {
+  if (memory.shift_preference?.normalized === "aucun") {
     points.push("Le candidat a déclaré qu'aucun des créneaux proposés ne lui convient.");
   }
   if (memory.candidate_question.length) {
     points.push("Le candidat a posé des questions : à relire.");
   }
+  if (input.endReason === "left") {
+    points.push("Le candidat a quitté l'entretien avant la clôture : le recueil peut être incomplet.");
+  }
 
   return {
-    version: 1,
+    version: 2,
     generated_at: (input.now ?? new Date()).toISOString(),
     session_id: input.sessionId,
     candidate_label: input.candidateLabel,
     is_synthetic: input.isSynthetic,
     mode: input.mode,
+    engine: input.engine ?? null,
+    end_reason: input.endReason ?? null,
+    duration_seconds: input.durationSeconds ?? null,
     job: {
       agency: job.agency,
       title: job.job_title,

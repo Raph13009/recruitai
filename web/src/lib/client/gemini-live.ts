@@ -1,29 +1,8 @@
 import { GoogleGenAI, type LiveConnectConfig, type LiveServerMessage, type Session } from "@google/genai";
-import { MicCapture, PcmPlayer } from "@/lib/client/audio";
-
-export type Role = "agent" | "candidate";
-
-export interface GeminiLiveHandlers {
-  /** Live caption, updated as transcription chunks arrive. */
-  onCaption: (role: Role, text: string) => void;
-  /** A finished turn (text only), ready to be stored. */
-  onTurn: (role: Role, text: string) => void;
-  /** The agent called end_interview and has finished speaking. */
-  onEndRequested: () => void;
-  onError: (message: string) => void;
-  /**
-   * Optional PCM16 24 kHz mono base64 chunks from the model (for LiveAvatar lip-sync).
-   * When provided with playLocalAudio=false, audio is only forwarded here.
-   */
-  onPcm?: (base64Pcm24k: string) => void;
-}
-
-export interface GeminiLiveOptions {
-  /** Capture and stream the mic (default true). Set false for text-only replies. */
-  enableMic?: boolean;
-  /** Play model audio in the browser (default true). Set false when an avatar plays it. */
-  playLocalAudio?: boolean;
-}
+import { MicCapture, type AudioSink, type PcmPlayer } from "@/lib/client/audio";
+import type { AvatarHandle } from "@/lib/client/avatar";
+import { postJson, type EngineHandlers, type InterviewEngine, type Role } from "@/lib/client/engine";
+import type { InterviewProgress } from "@/lib/interview/progress";
 
 export interface LiveTokenInfo {
   token: string;
@@ -31,35 +10,88 @@ export interface LiveTokenInfo {
   config: LiveConnectConfig;
 }
 
+/** Mic loudness (RMS, 0 to 1) above which the candidate is considered to be speaking. */
+const VOICE_LEVEL = 0.035;
+/** How long after the last loud chunk the candidate still counts as speaking. */
+const VOICE_HANG_MS = 500;
+
 /**
- * Gemini Live in the browser using an ephemeral token. Owns mic capture and playback.
- * Create it inside the click handler (the AudioContext needs a user gesture), then call connect().
+ * The real-time interviewer: Gemini Live in the browser, with an ephemeral token.
+ * It owns the mic capture, the conversation and the tool calls. Its voice goes to a sink:
+ * the speakers, or the video avatar, which plays the same audio lip-synced.
+ *
+ * Turn-taking follows Raphaël's fix (2622617): the interviewer is never interrupted. The mic is
+ * held while she speaks, so room noise or the echo of her own voice cannot cut her off, and a typed
+ * answer waits for the end of her sentence.
+ *
+ * Create the PcmPlayer inside the click handler (the AudioContext needs a user gesture).
  */
-export class GeminiLiveClient {
-  private player = new PcmPlayer();
+export class GeminiEngine implements InterviewEngine {
+  readonly kind = "gemini" as const;
+
   private mic = new MicCapture();
   private session: Session | null = null;
+  private avatar: AvatarHandle | null = null;
+  private sink: AudioSink;
   private closing = false;
-  private paused = false;
-  private started = false;
-  /** True while Camille is producing / playing a turn — mic audio is not forwarded. */
-  private agentSpeaking = false;
-  private micEnabled: boolean;
-  private playLocalAudio: boolean;
+  private muted = false;
+  /** The call can start without a mic (typed answers); it opens when the candidate unmutes. */
+  private micStarted = false;
+  private micStarting: Promise<boolean> | null = null;
+  private micDeviceId: string | undefined;
   private buffers: Record<Role, string> = { agent: "", candidate: "" };
+  private saveQueue: Promise<unknown> = Promise.resolve();
   private endRequested = false;
   private endFired = false;
+  private agentSpeaking = false;
+  private candidateSpeaking = false;
+  /** The model is still producing the current turn. */
+  private generating = false;
+  /** The interviewer is producing or still playing a turn: the mic is held meanwhile. */
+  private agentTalking = false;
+  private releaseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Typed answers sent while the interviewer was talking, delivered once she has finished. */
+  private pendingTexts: string[] = [];
+  private kickoff = "";
+  private started = false;
+  private lastVoiceAt = 0;
+  private ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private sessionToken: string,
-    private handlers: GeminiLiveHandlers,
-    options: GeminiLiveOptions = {},
+    private readonly sessionToken: string,
+    private readonly handlers: EngineHandlers,
+    private readonly speaker: PcmPlayer,
   ) {
-    this.micEnabled = options.enableMic !== false;
-    this.playLocalAudio = options.playLocalAudio !== false;
+    this.sink = speaker;
   }
 
-  async connect(info: LiveTokenInfo): Promise<void> {
+  get video(): boolean {
+    return this.avatar !== null;
+  }
+
+  /** Route the interviewer's voice to the video avatar. */
+  useAvatar(avatar: AvatarHandle) {
+    this.avatar = avatar;
+    this.sink = avatar;
+    this.handlers.onVideo(true);
+  }
+
+  /** The avatar is gone (time limit, network): the call continues on the speakers. */
+  dropAvatar(notice?: string) {
+    const avatar = this.avatar;
+    if (!avatar) return;
+    this.avatar = null;
+    this.sink = this.speaker;
+    void avatar.stop();
+    this.handlers.onVideo(false);
+    if (notice && !this.closing) this.handlers.onNotice(notice);
+  }
+
+  /** `micEnabled: false` starts without a mic: the candidate types, the interviewer still speaks. */
+  async connect(
+    info: LiveTokenInfo,
+    opts: { micDeviceId?: string; resumed?: boolean; micEnabled?: boolean } = {},
+  ): Promise<void> {
     // Ephemeral tokens work with Live API on the v1beta endpoint.
     const ai = new GoogleGenAI({ apiKey: info.token, httpOptions: { apiVersion: "v1beta" } });
     this.session = await ai.live.connect({
@@ -67,76 +99,111 @@ export class GeminiLiveClient {
       config: info.config,
       callbacks: {
         onmessage: (m) => void this.onMessage(m),
-        onerror: () => this.fail("Erreur de connexion à Gemini Live."),
-        onclose: () => {
-          if (!this.closing) this.fail("La connexion vocale s'est interrompue.");
-        },
+        onerror: () => this.fail("Erreur de connexion à la voix de l'entretien."),
+        onclose: () => this.fail("La connexion vocale s'est interrompue."),
       },
     });
-    // Unlock AudioContext early (still needs a later user gesture on some browsers).
-    if (this.playLocalAudio) await this.player.resume();
-    if (this.micEnabled) {
-      await this.mic.start((chunk) => {
-        // Hold mic while Camille talks so room noise / speaker bleed cannot cut her off.
-        if (this.paused || !this.started || !this.session || this.agentSpeaking) return;
-        this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
-      });
-    }
-    // Do not auto-speak: the UI shows "Faire parler Camille" so playback unlocks on click.
+    await this.speaker.unlock(); // still within the join click's activation; checked again before speaking
+    this.micDeviceId = opts.micDeviceId;
+    if (opts.micEnabled === false) this.muted = true;
+    else await this.startMic();
+    this.ticker = setInterval(() => this.tick(), 100);
+    const typed = opts.micEnabled === false ? " Le candidat n'a pas de micro : il répond par écrit, tu l'entends en texte." : "";
+    // Sent by begin(), once the candidate can hear (Raphaël's "Faire parler Camille", 77d7318).
+    this.kickoff =
+      (opts.resumed
+        ? "La connexion est rétablie. Reprends l'entretien maintenant."
+        : "Commence l'entretien maintenant. Prononce ton ouverture, puis attends ma réponse.") + typed;
   }
 
-  /**
-   * Explicit kickoff from a user click. Resumes audio, then asks Camille to open the interview.
-   * Not recorded as a candidate turn.
-   */
-  async beginInterview(): Promise<void> {
-    if (!this.session || this.started || this.paused) return;
+  async unlock(): Promise<boolean> {
+    const speakers = await this.speaker.unlock();
+    // With the avatar, the voice comes out of its video element.
+    return this.avatar ? this.avatar.unlock() : speakers;
+  }
+
+  begin() {
+    if (this.started || !this.session || this.closing) return;
     this.started = true;
-    if (this.playLocalAudio) await this.player.resume();
-    this.session.sendRealtimeInput({
-      text: "Commence l'entretien maintenant. Prononce ton ouverture, puis attends ma réponse.",
-    });
+    this.session.sendRealtimeInput({ text: this.kickoff });
   }
 
-  get hasStarted(): boolean {
-    return this.started;
+  async setMicMuted(muted: boolean): Promise<boolean> {
+    if (this.micStarting) await this.micStarting;
+    if (!muted && !this.micStarted) {
+      // Started without a mic: open it now (this runs from the candidate's click).
+      this.micStarting = this.startMic().then(
+        () => true,
+        () => false,
+      );
+      const opened = await this.micStarting;
+      this.micStarting = null;
+      if (!opened) {
+        this.mic.stop();
+        if (!this.closing) {
+          this.handlers.onNotice("Le micro n'est pas accessible. Autorisez-le dans la barre d'adresse, ou continuez par écrit.");
+        }
+        return false;
+      }
+    }
+    if (muted === this.muted) return true;
+    this.muted = muted;
+    this.mic.setMuted(muted);
+    // Tell the model the audio stream paused, so it handles what it already heard.
+    if (muted) this.session?.sendRealtimeInput({ audioStreamEnd: true });
+    return true;
   }
 
-  /** Send a typed candidate reply (and stop treating mic audio as the turn). */
   sendText(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || !this.session || this.paused) return;
-    if (!this.started) void this.beginInterview();
+    const clean = text.trim();
+    if (!clean || !this.session) return;
     this.flush("candidate");
-    this.handlers.onTurn("candidate", trimmed);
-    this.session.sendRealtimeInput({ text: trimmed });
+    this.emitTurn("candidate", clean);
+    // The interviewer finishes her sentence first; the answer follows right after.
+    if (this.agentTalking) this.pendingTexts.push(clean);
+    else this.session.sendRealtimeInput({ text: clean });
   }
 
-  setMicEnabled(enabled: boolean) {
-    this.micEnabled = enabled;
-    this.mic.setMuted(!enabled);
+  agentLevel(): number {
+    return this.sink.level();
   }
 
-  async pause() {
-    this.paused = true;
-    this.mic.setMuted(true);
-    this.session?.sendRealtimeInput({ audioStreamEnd: true });
-    if (this.playLocalAudio) await this.player.pause();
-  }
-
-  async resume() {
-    this.paused = false;
-    if (this.micEnabled) this.mic.setMuted(false);
-    if (this.playLocalAudio) await this.player.resume();
+  settle(): Promise<void> {
+    return this.saveQueue.then(() => undefined);
   }
 
   close() {
+    if (this.closing) return;
     this.closing = true;
+    if (this.ticker) clearInterval(this.ticker);
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
     this.flush();
     this.mic.stop();
-    this.player.close();
+    this.speaker.close();
+    void this.avatar?.stop();
+    this.avatar = null;
     this.session?.close();
     this.session = null;
+  }
+
+  // ---------- internals ----------
+
+  private async startMic() {
+    await this.mic.start(
+      (chunk) => {
+        // Held while the interviewer talks: noise and echo must not reach the model.
+        if (this.muted || !this.session || this.agentTalking) return;
+        this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
+      },
+      (level) => this.onMicLevel(this.agentTalking ? 0 : level),
+      this.micDeviceId,
+    );
+    if (this.closing) {
+      this.mic.stop(); // the call ended while the browser was opening the mic
+      return;
+    }
+    this.micStarted = true;
+    this.mic.setMuted(this.muted);
   }
 
   private fail(message: string) {
@@ -144,9 +211,49 @@ export class GeminiLiveClient {
     this.handlers.onError(message);
   }
 
-  private setAgentSpeaking(speaking: boolean) {
-    this.agentSpeaking = speaking;
-    if (this.micEnabled && !this.paused) this.mic.setMuted(speaking);
+  /** The interviewer started a turn: hold the mic until she has finished speaking. */
+  private holdMic() {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    this.releaseTimer = null;
+    this.agentTalking = true;
+  }
+
+  /** Reopens the mic once the last words have been played (the audio outlasts the generation). */
+  private releaseMicWhenSilent() {
+    if (this.releaseTimer) clearTimeout(this.releaseTimer);
+    const check = () => {
+      this.releaseTimer = null;
+      if (this.closing || this.generating) return; // a new turn started: it will release again
+      if (this.sink.isPlaying) {
+        this.releaseTimer = setTimeout(check, 150);
+        return;
+      }
+      this.agentTalking = false;
+      if (this.pendingTexts.length && this.session) {
+        this.session.sendRealtimeInput({ text: this.pendingTexts.join("\n") });
+        this.pendingTexts = [];
+      }
+    };
+    check();
+  }
+
+  private tick() {
+    const speaking = this.sink.isPlaying;
+    if (speaking !== this.agentSpeaking) {
+      this.agentSpeaking = speaking;
+      this.handlers.onAgentSpeaking(speaking);
+    }
+  }
+
+  private onMicLevel(level: number) {
+    const now = performance.now();
+    if (level > VOICE_LEVEL) this.lastVoiceAt = now;
+    const speaking = this.lastVoiceAt > 0 && now - this.lastVoiceAt < VOICE_HANG_MS;
+    if (speaking === this.candidateSpeaking) return;
+    this.candidateSpeaking = speaking;
+    this.handlers.onCandidateSpeaking(speaking);
+    // The avatar takes an attentive pose while the candidate talks.
+    this.avatar?.setListening(speaking);
   }
 
   private async onMessage(message: LiveServerMessage) {
@@ -154,37 +261,29 @@ export class GeminiLiveClient {
     if (content) {
       for (const part of content.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
-          this.setAgentSpeaking(true);
-          if (this.playLocalAudio) this.player.enqueue(part.inlineData.data);
-          this.handlers.onPcm?.(part.inlineData.data);
+          this.generating = true;
+          this.holdMic();
+          this.sink.enqueue(part.inlineData.data);
         }
       }
-      // Ignore mic STT when the candidate replies by typing (we already recorded the turn).
-      if (content.inputTranscription?.text && this.micEnabled) {
-        this.caption("candidate", content.inputTranscription.text);
-      }
+      const heard = content.inputTranscription?.text;
+      if (heard) this.caption("candidate", heard);
       if (content.outputTranscription?.text) {
-        this.setAgentSpeaking(true);
+        this.holdMic();
         this.caption("agent", content.outputTranscription.text);
       }
       if (content.interrupted) {
-        // With NO_INTERRUPTION this should be rare; still clear local playback if it happens.
-        if (this.playLocalAudio) this.player.interrupt();
+        // Rare with interruption turned off: drop what is left and listen.
+        this.generating = false;
+        this.sink.interrupt();
         this.flush("agent");
-        this.setAgentSpeaking(false);
+        this.releaseMicWhenSilent();
       }
       if (content.turnComplete) {
+        this.generating = false;
+        this.sink.endTurn();
         this.flush();
-        // Wait until local audio (if any) has finished before opening the mic again.
-        const openMic = () => {
-          if (this.closing) return;
-          if (this.playLocalAudio && this.player.isPlaying) {
-            setTimeout(openMic, 150);
-            return;
-          }
-          this.setAgentSpeaking(false);
-        };
-        openMic();
+        this.releaseMicWhenSilent();
         if (this.endRequested) this.fireEnd();
       }
     }
@@ -204,8 +303,18 @@ export class GeminiLiveClient {
       if (only && only !== role) continue;
       const text = this.buffers[role].trim();
       this.buffers[role] = "";
-      if (text) this.handlers.onTurn(role, text);
+      if (text) this.emitTurn(role, text);
     }
+  }
+
+  /** Shows a finished turn and stores it (text only), one at a time and in order. */
+  private emitTurn(role: Role, text: string) {
+    this.handlers.onTurn(role, text);
+    this.saveQueue = this.saveQueue.then(() =>
+      postJson(`/api/sessions/${this.sessionToken}/transcript`, { turns: [{ role, text: text.slice(0, 2000) }] }).catch(
+        () => undefined,
+      ),
+    );
   }
 
   private async onToolCall(calls: NonNullable<LiveServerMessage["toolCall"]>["functionCalls"]) {
@@ -218,8 +327,9 @@ export class GeminiLiveClient {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: call.name, args: call.args ?? {} }),
         });
-        const data = (await res.json()) as { result?: string; error?: string };
+        const data = (await res.json()) as { result?: string; error?: string; progress?: InterviewProgress };
         output = data.result ?? data.error ?? output;
+        if (data.progress) this.handlers.onProgress(data.progress);
       } catch {
         /* keep the default output; the conversation continues */
       }
@@ -235,10 +345,11 @@ export class GeminiLiveClient {
   private fireEnd() {
     if (this.endFired) return;
     this.endFired = true;
+    const startedAt = Date.now();
     const wait = () => {
       if (this.closing) return;
-      if (this.playLocalAudio && this.player.isPlaying) setTimeout(wait, 250);
-      else this.handlers.onEndRequested();
+      if (this.sink.isPlaying && Date.now() - startedAt < 30_000) setTimeout(wait, 250);
+      else this.handlers.onEnded();
     };
     wait();
   }

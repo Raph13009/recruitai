@@ -1,7 +1,31 @@
-// Browser audio helpers for Gemini Live: mic -> 16 kHz PCM16 (base64), PCM16 24 kHz (base64) -> speakers.
+// Browser audio helpers for the live interview:
+// mic -> 16 kHz PCM16 (base64) for the voice model, PCM16 24 kHz (base64) -> speakers.
 
 export const MIC_SAMPLE_RATE = 16000;
 export const PLAYBACK_SAMPLE_RATE = 24000;
+
+/**
+ * Where the interviewer's voice goes. Two implementations: the speakers (audio-only call) and the
+ * video avatar, which plays the same audio itself, lip-synced.
+ */
+export interface AudioSink {
+  /** Queue base64 PCM16 24 kHz mono for playback. */
+  enqueue(base64Pcm: string): void;
+  /** The model finished generating this turn (queued audio may still be playing). */
+  endTurn(): void;
+  /** Stop speaking now and drop what is queued. */
+  interrupt(): void;
+  /**
+   * Makes sure the candidate can hear. Resolves false while the browser still blocks sound
+   * (it then needs a click on the page).
+   */
+  unlock(): Promise<boolean>;
+  /** True while speech is still being played to the candidate. */
+  readonly isPlaying: boolean;
+  /** Output loudness from 0 to 1, for the on-screen presence. */
+  level(): number;
+  close(): void;
+}
 
 // Runs in the audio thread. Downsamples the mic stream to 16 kHz and posts Int16 chunks of ~32 ms.
 const WORKLET_SOURCE = `
@@ -49,11 +73,24 @@ export function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-/** Asks for mic access and releases it right away. Throws if denied. */
-export async function requestMicPermission(): Promise<void> {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  stream.getTracks().forEach((t) => t.stop());
+/** Root mean square of PCM16 samples, from 0 to 1. */
+export function pcm16Level(samples: Int16Array): number {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i] / 0x8000;
+    sum += s * s;
+  }
+  return Math.sqrt(sum / samples.length);
 }
+
+export const micConstraints = (deviceId?: string): MediaTrackConstraints => ({
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+});
 
 export class MicCapture {
   private ctx: AudioContext | null = null;
@@ -61,11 +98,12 @@ export class MicCapture {
   private node: AudioWorkletNode | null = null;
   private muted = false;
 
-  /** `onChunk` receives base64 PCM16 mono 16 kHz. Nothing is sent while muted. */
-  async start(onChunk: (base64Pcm: string) => void): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+  /**
+   * `onChunk` receives base64 PCM16 mono 16 kHz. Nothing is sent while muted.
+   * `onLevel` receives the mic loudness (0 to 1) about 30 times a second, 0 while muted.
+   */
+  async start(onChunk: (base64Pcm: string) => void, onLevel?: (level: number) => void, deviceId?: string): Promise<void> {
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(deviceId) });
     this.ctx = new AudioContext();
     const url = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
     try {
@@ -75,13 +113,20 @@ export class MicCapture {
     }
     this.node = new AudioWorkletNode(this.ctx, "pcm-capture");
     this.node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-      if (!this.muted) onChunk(bytesToBase64(new Uint8Array(e.data)));
+      if (this.muted) {
+        onLevel?.(0);
+        return;
+      }
+      onLevel?.(pcm16Level(new Int16Array(e.data)));
+      onChunk(bytesToBase64(new Uint8Array(e.data)));
     };
     this.ctx.createMediaStreamSource(this.stream).connect(this.node);
   }
 
   setMuted(muted: boolean) {
     this.muted = muted;
+    // Also disable the track so the browser's mic indicator reflects the mute.
+    this.stream?.getAudioTracks().forEach((t) => (t.enabled = !muted));
   }
 
   stop() {
@@ -92,11 +137,18 @@ export class MicCapture {
   }
 }
 
-/** Plays PCM16 24 kHz chunks back to back (one queue, so turns never overlap). */
-export class PcmPlayer {
+/** Plays PCM16 24 kHz chunks back to back on the speakers (one queue, so turns never overlap). */
+export class PcmPlayer implements AudioSink {
   private ctx = new AudioContext();
+  private analyser = this.ctx.createAnalyser();
+  private scope = new Uint8Array(256);
   private nextTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
+
+  constructor() {
+    this.analyser.fftSize = 256;
+    this.analyser.connect(this.ctx.destination);
+  }
 
   enqueue(base64Pcm: string) {
     const bytes = base64ToBytes(base64Pcm);
@@ -108,7 +160,7 @@ export class PcmPlayer {
 
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.ctx.destination);
+    source.connect(this.analyser);
     this.nextTime = Math.max(this.nextTime, this.ctx.currentTime + 0.02);
     source.start(this.nextTime);
     this.nextTime += buffer.duration;
@@ -116,12 +168,25 @@ export class PcmPlayer {
     source.onended = () => this.sources.delete(source);
   }
 
-  /** True while queued audio is still audible. */
+  endTurn() {
+    /* nothing to seal: queued buffers simply play out */
+  }
+
   get isPlaying(): boolean {
     return this.sources.size > 0;
   }
 
-  /** Drops everything queued (used when the candidate interrupts). */
+  level(): number {
+    if (!this.sources.size) return 0;
+    this.analyser.getByteTimeDomainData(this.scope);
+    let sum = 0;
+    for (let i = 0; i < this.scope.length; i++) {
+      const s = (this.scope[i] - 128) / 128;
+      sum += s * s;
+    }
+    return Math.min(1, Math.sqrt(sum / this.scope.length) * 3);
+  }
+
   interrupt() {
     this.sources.forEach((s) => {
       s.onended = null;
@@ -135,12 +200,10 @@ export class PcmPlayer {
     this.nextTime = 0;
   }
 
-  pause() {
-    return this.ctx.suspend();
-  }
-
-  resume() {
-    return this.ctx.resume();
+  async unlock(): Promise<boolean> {
+    // A blocked resume() can stay pending: do not wait for it forever.
+    await Promise.race([this.ctx.resume().catch(() => undefined), new Promise((r) => setTimeout(r, 400))]);
+    return this.ctx.state === "running";
   }
 
   close() {

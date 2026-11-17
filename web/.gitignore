@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local demo database and session secret
+/.data/
+
+# Placeholder hero photo: a stock image found online, not licensed for publication.
+# Replace it with the AI-generated portrait, then remove this line.
+/public/interviewer.jpg

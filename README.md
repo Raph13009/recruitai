@@ -10,9 +10,15 @@ V0.6 · macOS · Python standard · Ollama · whisper.cpp · poste de démo **Ag
 
 Les captures de ce fichier viennent du **mode démo** (sans Ollama), avec une candidate fictive, Léa, saisie au clavier le 16 novembre 2026. Le micro mains libres existe ; il n’est pas dans le GIF.
 
-## V2 cloud (en cours)
+## V2 : MVP SaaS en visio (`web/`)
 
-Une version Next.js (Gemini Live dans le navigateur, avatar LiveAvatar en option, espace recruteur) vit dans [`web/`](web). Le POC Python ci-dessous reste intact. Voir [docs/V2-CLOUD.md](docs/V2-CLOUD.md).
+Une version Next.js vit dans [`web/`](web) : site vitrine, comptes agence, postes, liens d’entretien par candidat, comptes rendus. Le candidat passe l’entretien en visio : visage photoréaliste synchronisé sur la voix (LiveAvatar), voix en temps réel (Gemini Live). Sans clé, tout tourne en mode démo.
+
+```bash
+cd web && npm install && npm run dev   # http://localhost:3000
+```
+
+Le POC Python ci-dessous reste intact. Détails : [web/README.md](web/README.md) et [docs/V2-CLOUD.md](docs/V2-CLOUD.md).
 
 ## La minute de démo
 

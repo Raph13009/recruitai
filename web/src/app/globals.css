@@ -1,65 +1,220 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn.css";
 
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * RecruitAI design tokens, on Raphaël's palette (origin/main): cream paper, white-ish sheets, blue-black
+ * ink, a deep teal for actions and the logo, warm grey lines. Always light, like his app.
+ * Fraunces for display, DM Sans for text. Components read the semantic tokens below (shadcn
+ * convention); change the brand here, not in components.
+ */
 @theme inline {
-  --color-ink: #16212b;
-  --color-slate: #4a5866;
-  --color-mist: #7b8794;
-  --color-teal: #0f6b5c;
-  --color-teal-deep: #0a4f44;
-  --color-teal-soft: #dcebe7;
-  --color-paper: #f2efe9;
-  --color-sheet: #fbfaf7;
-  --color-line: #ddd8cd;
-  --color-alert: #a3432f;
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-heading: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  /* Fixed ink, the same in light and dark tiles (captions over video). */
+  --color-ink: #16212b;
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --animate-voice-bar: voice-bar 1.2s ease-in-out infinite;
+  --animate-ring-out: ring-out 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  --animate-breathe: breathe 5s ease-in-out infinite;
+  --animate-rise: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+  @keyframes voice-bar {
+    0%, 100% { transform: scaleY(0.25); }
+    50% { transform: scaleY(1); }
+  }
+  @keyframes ring-out {
+    0% { transform: scale(1); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.035); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 }
 
-html {
-  background: var(--color-paper);
-  color-scheme: light;
-}
+:root {
+  --radius: 0.75rem;
 
-body {
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-  background-color: var(--color-paper);
-  background-image:
+  --background: #f2efe9; /* paper */
+  --foreground: #16212b; /* ink */
+  --card: #fbfaf7; /* sheet */
+  --card-foreground: #16212b;
+  --popover: #fbfaf7;
+  --popover-foreground: #16212b;
+  --primary: #0f6b5c; /* teal */
+  --primary-foreground: #ffffff;
+  --secondary: #e8e4db;
+  --secondary-foreground: #16212b;
+  --muted: #e8e4db;
+  --muted-foreground: #4a5866; /* slate */
+  --accent: #dcebe7; /* teal-soft */
+  --accent-foreground: #0a4f44; /* teal-deep */
+  --destructive: #a3432f; /* alert */
+  --destructive-foreground: #ffffff;
+  --success: #0a4f44;
+  --warning: #8a5a12;
+  --border: #ddd8cd; /* line */
+  --input: #d3cdc1;
+  --ring: #0f6b5c;
+  /* Logo, closing band, sign-in panel, interviewer orb. */
+  --brand: #0f6b5c;
+  --brand-foreground: #ffffff;
+  --chart-1: #0f6b5c;
+  --chart-2: #5f9e92;
+  --chart-3: #4a5866;
+  --chart-4: #7b8794;
+  --chart-5: #16212b;
+  --sidebar: #ece8e0;
+  --sidebar-foreground: #16212b;
+  --sidebar-primary: #0f6b5c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2ddd2;
+  --sidebar-accent-foreground: #16212b;
+  --sidebar-border: #ddd8cd;
+  --sidebar-ring: #0f6b5c;
+
+  /* Raphaël's paper: teal and ink washes plus a faint grain (not a component token). */
+  --paper-texture:
     radial-gradient(ellipse 70% 50% at 85% -10%, rgb(15 107 92 / 0.12), transparent 60%),
     radial-gradient(ellipse 50% 40% at -5% 105%, rgb(22 33 43 / 0.06), transparent 60%),
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.13  0 0 0 0 0.17  0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  background-attachment: fixed;
 }
 
-.display {
-  font-family: var(--font-display);
-  font-optical-sizing: auto;
-  letter-spacing: -0.02em;
+/*
+ * Ink tiles only: the avatar video, the camera preview and the call picture on the home page
+ * (Raphaël's video area is ink). The app itself has no dark theme.
+ */
+.dark {
+  --background: #16212b;
+  --foreground: #f2efe9;
+  --card: #1d2a35;
+  --card-foreground: #f2efe9;
+  --popover: #1d2a35;
+  --popover-foreground: #f2efe9;
+  --primary: #5cb3a1;
+  --primary-foreground: #0a1f1b;
+  --secondary: #26343f;
+  --secondary-foreground: #f2efe9;
+  --muted: #22303b;
+  --muted-foreground: #9ba6b1;
+  --accent: #1b3a36;
+  --accent-foreground: #cfe6e0;
+  --destructive: #e07a62;
+  --destructive-foreground: #1c0f0b;
+  --success: #7cc4b4;
+  --warning: #e0b15c;
+  --border: rgb(242 239 233 / 0.1);
+  --input: rgb(242 239 233 / 0.16);
+  --ring: #5cb3a1;
+  --brand: #0f6b5c;
+  --brand-foreground: #ffffff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: light;
+    background: var(--background);
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-image: var(--paper-texture);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 28%, transparent);
+  }
 }
 
 @layer components {
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal disabled:cursor-not-allowed disabled:opacity-50 bg-teal text-white hover:bg-teal-deep;
+  /* The paper background, for full-screen layers that cover the page (the call screen). */
+  .paper {
+    background-color: var(--background);
+    background-image: var(--paper-texture);
+    background-attachment: fixed;
   }
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal disabled:cursor-not-allowed disabled:opacity-50 border border-line bg-sheet/70 text-ink hover:border-ink/30 hover:bg-sheet;
-  }
-  .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal disabled:cursor-not-allowed disabled:opacity-50 border border-alert/30 bg-sheet/70 text-alert hover:bg-alert/10;
-  }
-  .sheet {
-    @apply rounded-2xl border border-line bg-sheet/80 shadow-[0_1px_0_rgb(255_255_255/0.8)_inset,0_12px_32px_-18px_rgb(22_33_43/0.25)];
+  .display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
   }
   .eyebrow {
-    @apply text-xs font-medium uppercase tracking-[0.14em] text-teal;
+    @apply text-xs font-medium uppercase tracking-[0.14em] text-primary;
   }
-}
-
-@keyframes bar {
-  0%, 100% { transform: scaleY(0.25); }
-  50% { transform: scaleY(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wave span { animation: none !important; }
+  .motion-safe-only,
+  .motion-safe-only * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media print {
+  .no-print,
+  [data-slot="sidebar-gap"],
+  [data-slot="sidebar-container"],
+  [data-slot="sidebar-rail"] {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
 }
