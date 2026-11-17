@@ -32,6 +32,9 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
   const [draft, setDraft] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  /** Connected but Camille has not been asked to speak yet. */
+  const [awaitingStart, setAwaitingStart] = useState(false);
+  const [startingSpeech, setStartingSpeech] = useState(false);
   const [paused, setPaused] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,11 +109,15 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     };
   }
 
-  // Must be called straight from the click handler so the AudioContext may start.
-  async function startAudio(): Promise<boolean> {
-    const live = new GeminiLiveClient(token, geminiHandlers(), {
-      enableMic: !textChatRef.current,
-      playLocalAudio: true,
+  /** Shared Gemini connect used by audio and by client-driven avatar. */
+  async function connectGemini(opts: {
+    enableMic: boolean;
+    playLocalAudio: boolean;
+    onPcm?: (b64: string) => void;
+  }): Promise<boolean> {
+    const live = new GeminiLiveClient(token, geminiHandlers({ onPcm: opts.onPcm }), {
+      enableMic: opts.enableMic,
+      playLocalAudio: opts.playLocalAudio,
     });
     liveRef.current = live;
     try {
@@ -125,38 +132,15 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     }
   }
 
-  /** Avatar + voice: LiveAvatar Gemini connector (mic → Gemini → video). */
-  async function startAvatarVoice(): Promise<boolean> {
-    try {
-      const info = await postJson<{ sessionToken: string }>("/api/liveavatar/session", {
-        sessionId: id,
-        token,
-      });
-      const { LiveAvatarSession, SessionEvent, AgentEventsEnum } = await import("@heygen/liveavatar-web-sdk");
-      const session = new LiveAvatarSession(info.sessionToken, { voiceChat: { defaultMuted: false } });
-      avatarRef.current = session;
-      session.on(SessionEvent.SESSION_STREAM_READY, () => {
-        if (videoRef.current) session.attach(videoRef.current);
-      });
-      session.on(SessionEvent.SESSION_DISCONNECTED, () => {
-        if (!ending.current) setError("La connexion avec l'avatar s'est interrompue.");
-      });
-      session.on(AgentEventsEnum.USER_TRANSCRIPTION, (e) => addTurn("candidate", e.text));
-      session.on(AgentEventsEnum.AVATAR_TRANSCRIPTION, (e) => addTurn("agent", e.text));
-      await session.start();
-      return true;
-    } catch {
-      await avatarRef.current?.stop().catch(() => undefined);
-      avatarRef.current = null;
-      return false;
-    }
+  async function startAudio(): Promise<boolean> {
+    return connectGemini({ enableMic: !textChatRef.current, playLocalAudio: true });
   }
 
   /**
-   * Avatar + typed replies: browser Gemini (text in, audio out) drives LiveAvatar via repeatAudio.
-   * The LiveAvatar Gemini connector cannot accept typed user input.
+   * Avatar always runs client-driven Gemini (mic and/or text) so we can kick off speech
+   * with an explicit button. The LiveAvatar Gemini connector alone stays silent until you talk.
    */
-  async function startAvatarText(): Promise<boolean> {
+  async function startAvatar(): Promise<boolean> {
     try {
       const info = await postJson<{ sessionToken: string }>("/api/liveavatar/session", {
         sessionId: id,
@@ -170,36 +154,38 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       });
       avatarRef.current = session;
       session.on(SessionEvent.SESSION_STREAM_READY, () => {
-        if (videoRef.current) session.attach(videoRef.current);
+        if (videoRef.current) {
+          session.attach(videoRef.current);
+          void videoRef.current.play().catch(() => undefined);
+        }
       });
       session.on(SessionEvent.SESSION_DISCONNECTED, () => {
         if (!ending.current) setError("La connexion avec l'avatar s'est interrompue.");
       });
       await session.start();
 
-      const live = new GeminiLiveClient(
-        token,
-        geminiHandlers({
-          onPcm: (b64) => {
-            try {
-              session.repeatAudio(b64);
-            } catch {
-              /* ignore if avatar socket not ready for a chunk */
-            }
-          },
-        }),
-        { enableMic: false, playLocalAudio: false },
-      );
-      liveRef.current = live;
-      const gemini = await postJson<LiveTokenInfo>("/api/gemini/token", { sessionId: id, token });
-      await live.connect(gemini);
-      return true;
+      const ok = await connectGemini({
+        enableMic: !textChatRef.current,
+        playLocalAudio: false,
+        onPcm: (b64) => {
+          try {
+            session.repeatAudio(b64);
+          } catch {
+            /* avatar socket may lag a chunk */
+          }
+        },
+      });
+      if (!ok) {
+        await session.stop().catch(() => undefined);
+        avatarRef.current = null;
+      }
+      return ok;
     } catch (e) {
       liveRef.current?.close();
       liveRef.current = null;
       await avatarRef.current?.stop().catch(() => undefined);
       avatarRef.current = null;
-      setError(e instanceof Error ? e.message : "Connexion avatar (texte) impossible.");
+      setError(e instanceof Error ? e.message : "Connexion avatar impossible.");
       return false;
     }
   }
@@ -207,29 +193,46 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
   async function start() {
     setError(null);
     setNotice(null);
+    setAwaitingStart(false);
     setConnecting(true);
     setStep("live");
     let ok = false;
     if (mode === "avatar") {
-      ok = textChat ? await startAvatarText() : await startAvatarVoice();
+      ok = await startAvatar();
       if (!ok) {
         setMode("audio");
-        setNotice(
-          textChat
-            ? "L'avatar n'est pas disponible. L'entretien continue en audio, réponses à l'écrit."
-            : "L'avatar n'est pas disponible pour le moment. L'entretien continue en audio seul.",
-        );
+        setNotice("L'avatar n'est pas disponible. L'entretien continue en audio.");
       }
     }
     if (!ok) ok = await startAudio();
     setConnecting(false);
-    if (!ok) setStep("ready");
-    else if (textChat) setTimeout(() => draftRef.current?.focus(), 100);
+    if (!ok) {
+      setStep("ready");
+      return;
+    }
+    setAwaitingStart(true);
+  }
+
+  async function beginSpeech() {
+    if (!liveRef.current || startingSpeech) return;
+    setStartingSpeech(true);
+    setError(null);
+    try {
+      // User gesture: unlock video + audio playback.
+      void videoRef.current?.play().catch(() => undefined);
+      await liveRef.current.beginInterview();
+      setAwaitingStart(false);
+      if (textChat) setTimeout(() => draftRef.current?.focus(), 100);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible de démarrer Camille.");
+    } finally {
+      setStartingSpeech(false);
+    }
   }
 
   function sendDraft() {
     const text = draft.trim();
-    if (!text || paused || connecting) return;
+    if (!text || paused || connecting || awaitingStart) return;
     liveRef.current?.sendText(text);
     setDraft("");
   }
@@ -241,21 +244,8 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       if (next) await liveRef.current.pause();
       else await liveRef.current.resume();
     }
-    // Voice avatar (connector): mute/unmute the LiveAvatar mic.
-    if (mode === "avatar" && !liveRef.current) {
-      const session = avatarRef.current;
-      if (next) {
-        await session?.voiceChat.mute();
-        videoRef.current?.pause();
-      } else {
-        await session?.voiceChat.unmute();
-        void videoRef.current?.play();
-      }
-    } else if (mode === "avatar" && next) {
-      videoRef.current?.pause();
-    } else if (mode === "avatar") {
-      void videoRef.current?.play();
-    }
+    if (mode === "avatar" && next) videoRef.current?.pause();
+    else if (mode === "avatar") void videoRef.current?.play();
   }
 
   const shownTurns = partial ? [...turns, partial] : turns;
@@ -349,14 +339,9 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
             </span>
           </label>
 
-          {mode === "avatar" && !textChat && (
-            <p className="mt-3 text-xs text-mist">
-              En mode avatar vocal, votre voix transite aussi par le service LiveAvatar pour générer la vidéo.
-            </p>
-          )}
           {error && <p role="alert" className="mt-4 text-sm text-alert">{error}</p>}
           <button className="btn-primary mt-7" onClick={start} disabled={connecting}>
-            Démarrer l’entretien
+            Se connecter
           </button>
         </section>
       )}
@@ -370,7 +355,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
             </div>
           ) : (
             <div className="relative grid h-52 place-items-center bg-gradient-to-br from-teal-soft/70 to-sheet">
-              <Waveform className={`h-16 gap-1.5 text-teal [&>span]:w-1.5 ${paused || connecting ? "opacity-30" : ""}`} />
+              <Waveform className={`h-16 gap-1.5 text-teal [&>span]:w-1.5 ${paused || connecting || awaitingStart ? "opacity-30" : ""}`} />
               {connecting && <Overlay text="Connexion à Camille…" />}
             </div>
           )}
@@ -378,17 +363,35 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
           <div className="p-6 sm:p-8">
             {notice && <p className="mb-4 rounded-lg bg-teal-soft/70 px-4 py-2.5 text-sm text-teal-deep">{notice}</p>}
             {error && <p role="alert" className="mb-4 rounded-lg bg-alert/10 px-4 py-2.5 text-sm text-alert">{error}</p>}
-            {textChat && (
+
+            {awaitingStart && !connecting && (
+              <div className="mb-6 rounded-xl border border-teal/25 bg-teal-soft/50 p-5 text-center">
+                <p className="text-sm text-ink/85">
+                  Connexion prête. Appuyez pour que Camille commence à parler
+                  {textChat ? " — ensuite vous répondrez à l’écrit." : "."}
+                </p>
+                <button
+                  type="button"
+                  className="btn-primary mt-4"
+                  onClick={() => void beginSpeech()}
+                  disabled={startingSpeech || paused}
+                >
+                  {startingSpeech ? "Démarrage…" : "Faire parler Camille"}
+                </button>
+              </div>
+            )}
+
+            {textChat && !awaitingStart && (
               <p className="mb-4 text-xs font-medium uppercase tracking-wider text-teal">
                 Mode écrit · Camille parle · vous tapez
               </p>
             )}
 
             <div aria-live="polite" className="min-h-32 space-y-3">
-              {lastTurns.length === 0 && !connecting && (
+              {lastTurns.length === 0 && !connecting && !awaitingStart && (
                 <p className="text-sm text-mist">
                   {textChat
-                    ? "Camille va commencer. Tapez votre réponse ci-dessous."
+                    ? "Camille parle. Tapez votre réponse ci-dessous."
                     : "Les sous-titres apparaîtront ici dès que Camille parle."}
                 </p>
               )}
@@ -400,7 +403,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
               ))}
             </div>
 
-            {textChat && (
+            {textChat && !awaitingStart && (
               <form
                 className="mt-6 flex flex-col gap-2 border-t border-line pt-5 sm:flex-row sm:items-end"
                 onSubmit={(e) => {
@@ -431,8 +434,8 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
               </form>
             )}
 
-            <div className={`flex flex-wrap items-center gap-3 ${textChat ? "mt-4" : "mt-6 border-t border-line pt-5"}`}>
-              <button className="btn-ghost" onClick={togglePause} disabled={connecting}>
+            <div className={`flex flex-wrap items-center gap-3 ${textChat && !awaitingStart ? "mt-4" : "mt-6 border-t border-line pt-5"}`}>
+              <button className="btn-ghost" onClick={togglePause} disabled={connecting || awaitingStart}>
                 {paused ? "Reprendre" : "Pause"}
               </button>
               <button className="btn-danger" onClick={() => void endInterview()}>

@@ -41,6 +41,7 @@ export class GeminiLiveClient {
   private session: Session | null = null;
   private closing = false;
   private paused = false;
+  private started = false;
   private micEnabled: boolean;
   private playLocalAudio: boolean;
   private buffers: Record<Role, string> = { agent: "", candidate: "" };
@@ -70,20 +71,39 @@ export class GeminiLiveClient {
         },
       },
     });
+    // Unlock AudioContext early (still needs a later user gesture on some browsers).
     if (this.playLocalAudio) await this.player.resume();
     if (this.micEnabled) {
       await this.mic.start((chunk) => {
-        if (this.paused || !this.session) return;
+        if (this.paused || !this.started || !this.session) return;
         this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
       });
     }
-    this.session.sendRealtimeInput({ text: "Commence l'entretien maintenant." });
+    // Do not auto-speak: the UI shows "Faire parler Camille" so playback unlocks on click.
+  }
+
+  /**
+   * Explicit kickoff from a user click. Resumes audio, then asks Camille to open the interview.
+   * Not recorded as a candidate turn.
+   */
+  async beginInterview(): Promise<void> {
+    if (!this.session || this.started || this.paused) return;
+    this.started = true;
+    if (this.playLocalAudio) await this.player.resume();
+    this.session.sendRealtimeInput({
+      text: "Commence l'entretien maintenant. Prononce ton ouverture, puis attends ma réponse.",
+    });
+  }
+
+  get hasStarted(): boolean {
+    return this.started;
   }
 
   /** Send a typed candidate reply (and stop treating mic audio as the turn). */
   sendText(text: string) {
     const trimmed = text.trim();
     if (!trimmed || !this.session || this.paused) return;
+    if (!this.started) void this.beginInterview();
     this.flush("candidate");
     this.handlers.onTurn("candidate", trimmed);
     this.session.sendRealtimeInput({ text: trimmed });
