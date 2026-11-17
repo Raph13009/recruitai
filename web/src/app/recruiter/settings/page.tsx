@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { AudioLinesIcon, DatabaseIcon, ScanFaceIcon } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { PageBody, PageHeader, PageIntro, PageSkeleton } from "@/components/recruiter/page-header";
-import { AgencyForm, BrandingForm, InterviewerForm } from "@/components/recruiter/settings-forms";
+import { AgencyForm, InterviewerForm } from "@/components/recruiter/settings-forms";
 import { TeamSettings } from "@/components/recruiter/team-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ export default function SettingsPage() {
     <>
       <PageHeader crumbs={[{ label: "Réglages" }]} />
       <PageBody className="max-w-4xl">
-        <PageIntro title="Réglages" description="Votre agence, l’intervieweur que rencontrent vos candidats et les services connectés." />
+        <PageIntro title="Réglages" description="Équipe, intervieweur, agence et services connectés. Le branding a son propre onglet." />
         <Suspense fallback={<PageSkeleton />}>
           <Settings />
         </Suspense>
@@ -101,16 +101,6 @@ async function Settings() {
             </CardHeader>
             <CardContent>
               <InterviewerForm settings={agency.interviewer} avatarService={avatarService} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Branding</CardTitle>
-              <CardDescription>Logo, bandeau et couleur visibles dans votre espace et chez le candidat.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BrandingForm branding={agency.branding} />
             </CardContent>
           </Card>
 

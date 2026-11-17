@@ -54,11 +54,13 @@ export function BrandingForm({ branding }: { branding: AgencyBranding }) {
   const [state, action, pending] = useActionState(saveBranding, EMPTY_FORM);
   useSavedToast(state, "Branding enregistré");
   const errors = state.fieldErrors ?? {};
-  const [accent, setAccent] = useState(branding.accent_color);
+  // Browsers normalize color inputs to lowercase; keep state in sync to avoid controlled-input noise.
+  const initialAccent = branding.accent_color.toLowerCase();
+  const [accent, setAccent] = useState(initialAccent);
 
   return (
     // Re-mounts after a save so file inputs and "remove" checkboxes reset to the stored branding.
-    <form action={action} encType="multipart/form-data" key={`${branding.logo_url}|${branding.banner_url}|${branding.accent_color}`}>
+    <form action={action} encType="multipart/form-data" key={`${branding.logo_url}|${branding.banner_url}|${initialAccent}`}>
       <FieldGroup>
         <Field data-invalid={Boolean(errors.accent_color)}>
           <FieldLabel htmlFor="accent_color">Couleur d’accent</FieldLabel>
@@ -66,8 +68,8 @@ export function BrandingForm({ branding }: { branding: AgencyBranding }) {
             <input
               type="color"
               aria-label="Choisir la couleur d’accent"
-              value={/^#[0-9a-f]{6}$/i.test(accent) ? accent : "#000000"}
-              onChange={(e) => setAccent(e.target.value)}
+              value={/^#[0-9a-f]{6}$/i.test(accent) ? accent.toLowerCase() : "#000000"}
+              onChange={(e) => setAccent(e.target.value.toLowerCase())}
               className="h-9 w-12 cursor-pointer rounded-md border bg-transparent p-1"
             />
             <Input

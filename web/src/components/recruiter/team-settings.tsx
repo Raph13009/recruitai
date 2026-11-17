@@ -11,6 +11,16 @@ import type { AgencyInvite, Recruiter } from "@/lib/db/types";
 
 const EMPTY: TeamInviteState = {};
 
+/** Stable FR date (avoids Node vs browser `toLocaleDateString` hydration drift). */
+function formatInviteDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = d.getUTCFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 export function TeamSettings({
   members,
   invites,
@@ -93,8 +103,8 @@ export function TeamSettings({
               <li key={invite.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{invite.email}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Expire le {new Date(invite.expires_at).toLocaleDateString("fr-FR")}
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                    Expire le {formatInviteDate(invite.expires_at)}
                   </p>
                 </div>
                 <form action={revokeTeammateInvite}>

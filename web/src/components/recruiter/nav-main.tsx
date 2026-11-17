@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BriefcaseIcon, LayoutDashboardIcon, MessagesSquareIcon, Settings2Icon } from "lucide-react";
+import { BriefcaseIcon, LayoutDashboardIcon, MessagesSquareIcon, PaletteIcon, Settings2Icon } from "lucide-react";
 import {
   SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
@@ -11,6 +11,7 @@ const ITEMS = [
   { href: "/recruiter", label: "Tableau de bord", icon: LayoutDashboardIcon, exact: true },
   { href: "/recruiter/jobs", label: "Postes", icon: BriefcaseIcon },
   { href: "/recruiter/sessions", label: "Entretiens", icon: MessagesSquareIcon },
+  { href: "/recruiter/branding", label: "Branding", icon: PaletteIcon },
   { href: "/recruiter/settings", label: "Réglages", icon: Settings2Icon },
 ];
 
