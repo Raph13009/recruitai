@@ -31,7 +31,7 @@ const MONTHS_FR = [
 ];
 
 /** Today's date (YYYY-MM-DD) in Paris, independent of the server timezone. */
-function todayInParis(): string {
+export function todayInParis(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
 }
 
@@ -50,8 +50,23 @@ export function formatFrDate(iso: string): string {
   return `${d === 1 ? "1er" : d} ${MONTHS_FR[m - 1]} ${y}`;
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a real calendar date written YYYY-MM-DD. */
+export function isIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+/** `start_date_rule` is either a fixed date (YYYY-MM-DD) or "next_monday" (always the coming Monday). */
+export function resolveStartDate(rule: string, today?: string): string {
+  return isIsoDate(rule) ? rule : nextMonday(today);
+}
+
 export function toJobBrief(facts: JobFacts, today?: string): JobBrief {
-  const start = nextMonday(today);
+  const start = resolveStartDate(facts.start_date_rule, today);
   return { ...facts, start_date: start, start_date_fr: formatFrDate(start) };
 }
 

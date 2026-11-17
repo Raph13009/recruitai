@@ -1,156 +1,67 @@
-import { env } from "@/lib/env";
+// Single entry point for data (Raphaël's facade): the local demo store by default, Supabase when
+// USE_MOCK_DB=false and SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set. Import from "@/lib/db" only.
+import "server-only";
 import { supabaseConfigured } from "@/lib/db/client";
+import { candidatePayloadOf, dashboardOf } from "@/lib/db/helpers";
 import * as mock from "@/lib/db/mock";
 import * as remote from "@/lib/db/supabase-store";
-import type {
-  Agency,
-  CandidateSessionPayload,
-  InterviewMode,
-  InterviewSession,
-  Job,
-  JobStatus,
-  Report,
-  TranscriptRole,
-  TranscriptTurn,
-} from "@/lib/db/types";
-import type { FactInput } from "@/lib/interview/memory";
-import type { CandidateMemory } from "@/lib/interview/memory";
-import type { JobBrief, JobFacts } from "@/lib/job";
+import type { CandidateSessionPayload } from "@/lib/db/types";
+import { env } from "@/lib/env";
 
-function useRemote(): boolean {
-  return !env.useMockDb() && supabaseConfigured();
+export {
+  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, type SessionContext,
+} from "@/lib/db/helpers";
+
+type StoreApi = typeof mock;
+// Compile-time check: the Supabase store offers exactly the same functions as the demo store.
+const remoteStore: StoreApi = remote;
+
+/** True when data lives in Supabase (shared by every server instance). */
+export const usingSupabase = () => !env.useMockDb() && supabaseConfigured();
+const store = (): StoreApi => (usingSupabase() ? remoteStore : mock);
+
+// Accounts and agencies
+export const authenticate: StoreApi["authenticate"] = (...a) => store().authenticate(...a);
+export const demoRecruiter: StoreApi["demoRecruiter"] = (...a) => store().demoRecruiter(...a);
+export const getRecruiter: StoreApi["getRecruiter"] = (...a) => store().getRecruiter(...a);
+export const getAgency: StoreApi["getAgency"] = (...a) => store().getAgency(...a);
+export const createAgencyWithRecruiter: StoreApi["createAgencyWithRecruiter"] = (...a) => store().createAgencyWithRecruiter(...a);
+export const updateAgency: StoreApi["updateAgency"] = (...a) => store().updateAgency(...a);
+export const updateInterviewer: StoreApi["updateInterviewer"] = (...a) => store().updateInterviewer(...a);
+
+// Jobs
+export const listJobs: StoreApi["listJobs"] = (...a) => store().listJobs(...a);
+export const getJob: StoreApi["getJob"] = (...a) => store().getJob(...a);
+export const upsertJob: StoreApi["upsertJob"] = (...a) => store().upsertJob(...a);
+export const setJobStatus: StoreApi["setJobStatus"] = (...a) => store().setJobStatus(...a);
+export const publicDemoJob: StoreApi["publicDemoJob"] = (...a) => store().publicDemoJob(...a);
+
+// Interviews, recruiter side
+export const createSession: StoreApi["createSession"] = (...a) => store().createSession(...a);
+export const createPublicDemoSession: StoreApi["createPublicDemoSession"] = (...a) => store().createPublicDemoSession(...a);
+export const listSessions: StoreApi["listSessions"] = (...a) => store().listSessions(...a);
+export const getSession: StoreApi["getSession"] = (...a) => store().getSession(...a);
+export const deleteSession: StoreApi["deleteSession"] = (...a) => store().deleteSession(...a);
+export const getTranscript: StoreApi["getTranscript"] = (...a) => store().getTranscript(...a);
+export const getReport: StoreApi["getReport"] = (...a) => store().getReport(...a);
+
+export async function getDashboard(agencyId: string) {
+  const [jobs, sessions] = await Promise.all([listJobs(agencyId), listSessions(agencyId)]);
+  return dashboardOf(jobs, sessions);
 }
 
-export const jobBrief = remote.jobBrief;
-
-export async function hydrateFromCookie(): Promise<void> {
-  if (useRemote()) return remote.hydrateFromCookie();
-  return mock.hydrateFromCookie();
-}
-
-export async function persistSession(sessionId: string): Promise<void> {
-  if (useRemote()) return remote.persistSession(sessionId);
-  return mock.persistSession(sessionId);
-}
-
-export async function getAgency(): Promise<Agency> {
-  if (useRemote()) return remote.getAgency();
-  return mock.getAgency();
-}
-
-export async function listJobs(): Promise<Job[]> {
-  if (useRemote()) return remote.listJobs();
-  return mock.listJobs();
-}
-
-export async function getJob(id: string): Promise<Job | null> {
-  if (useRemote()) return remote.getJob(id);
-  return mock.getJob(id);
-}
-
-export async function defaultJob(): Promise<Job> {
-  if (useRemote()) return remote.defaultJob();
-  return mock.defaultJob();
-}
-
-export async function upsertJob(input: {
-  id?: string;
-  facts: JobFacts;
-  status?: JobStatus;
-}): Promise<Job> {
-  if (useRemote()) return remote.upsertJob(input);
-  return mock.upsertJob(input);
-}
-
-export async function listSessions(): Promise<InterviewSession[]> {
-  if (useRemote()) return remote.listSessions();
-  return mock.listSessions();
-}
-
-export async function getSessionById(id: string): Promise<InterviewSession | null> {
-  if (useRemote()) return remote.getSessionById(id);
-  return mock.getSessionById(id);
-}
-
-export async function getSessionByToken(token: string): Promise<InterviewSession | null> {
-  if (useRemote()) return remote.getSessionByToken(token);
-  return mock.getSessionByToken(token);
-}
-
-export async function getTranscript(sessionId: string): Promise<TranscriptTurn[]> {
-  if (useRemote()) return remote.getTranscript(sessionId);
-  return mock.getTranscript(sessionId);
-}
-
-export async function getReport(sessionId: string): Promise<Report | null> {
-  if (useRemote()) return remote.getReport(sessionId);
-  return mock.getReport(sessionId);
-}
-
-export async function createSession(input: {
-  jobId?: string;
-  candidateLabel?: string;
-  token?: string;
-  id?: string;
-}): Promise<InterviewSession | null> {
-  if (useRemote()) return remote.createSession(input);
-  return mock.createSession(input);
-}
-
-export async function ensureSession(input: {
-  sessionId?: string;
-  token?: string;
-  candidateLabel?: string;
-}): Promise<InterviewSession | null> {
-  if (useRemote()) return remote.ensureSession(input);
-  return mock.ensureSession(input);
-}
-
-export async function getDashboard(): Promise<{
-  agency: Agency;
-  jobs: Array<Job & { brief: JobBrief }>;
-  sessions: InterviewSession[];
-  counts: { total: number; completed: number; in_progress: number };
-}> {
-  if (useRemote()) return remote.getDashboard();
-  return mock.getDashboard();
-}
+// Interviews, candidate side
+export const getSessionByToken: StoreApi["getSessionByToken"] = (...a) => store().getSessionByToken(...a);
+export const getSessionContext: StoreApi["getSessionContext"] = (...a) => store().getSessionContext(...a);
+export const markStarted: StoreApi["markStarted"] = (...a) => store().markStarted(...a);
+export const recordFact: StoreApi["recordFact"] = (...a) => store().recordFact(...a);
+export const appendTranscript: StoreApi["appendTranscript"] = (...a) => store().appendTranscript(...a);
+export const completeSession: StoreApi["completeSession"] = (...a) => store().completeSession(...a);
 
 export async function toCandidatePayload(
-  session: InterviewSession,
+  token: string,
+  experience: Omit<CandidateSessionPayload["experience"], "persona_name">,
 ): Promise<CandidateSessionPayload | null> {
-  if (useRemote()) return remote.toCandidatePayload(session);
-  return mock.toCandidatePayload(session);
+  const ctx = await getSessionContext(token);
+  return ctx ? candidatePayloadOf(ctx, experience) : null;
 }
-
-export async function markStarted(
-  session: InterviewSession,
-  mode: InterviewMode,
-): Promise<InterviewSession> {
-  if (useRemote()) return remote.markStarted(session, mode);
-  mock.markStarted(session, mode);
-  return session;
-}
-
-export async function recordFact(
-  session: InterviewSession,
-  input: FactInput,
-): Promise<CandidateMemory> {
-  if (useRemote()) return remote.recordFact(session, input);
-  return mock.recordFact(session, input);
-}
-
-export async function appendTranscript(
-  session: InterviewSession,
-  turns: { role: TranscriptRole; text: string }[],
-): Promise<number> {
-  if (useRemote()) return remote.appendTranscript(session, turns);
-  return mock.appendTranscript(session, turns);
-}
-
-export async function completeSession(session: InterviewSession): Promise<Report | null> {
-  if (useRemote()) return remote.completeSession(session);
-  return mock.completeSession(session);
-}
-
-export type { CandidateSessionPayload } from "@/lib/db/types";

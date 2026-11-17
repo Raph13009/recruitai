@@ -61,8 +61,11 @@ function normalize(field: FactField, normalized: string | null | undefined, work
   switch (field) {
     case "availability":
       return value === "immediate" || (ISO_DATE.test(value) && !Number.isNaN(Date.parse(value))) ? value : null;
-    case "shift_preference":
-      return [...workingHours, "les deux", "aucun", "both", "none"].includes(value) ? value : null;
+    case "shift_preference": {
+      // The model sometimes answers in English (seen in Raphaël's tests): keep the French values.
+      const french = ({ both: "les deux", none: "aucun" } as Record<string, string>)[value.toLowerCase()] ?? value;
+      return [...workingHours, "les deux", "aucun"].includes(french) ? french : null;
+    }
     case "salary_expectation": {
       const n = Number(value.replace(",", "."));
       return Number.isFinite(n) && n > 0 && n < 1000 ? String(n) : null;

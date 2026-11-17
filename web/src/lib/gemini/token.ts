@@ -1,12 +1,7 @@
-import {
-  ActivityHandling,
-  GoogleGenAI,
-  Modality,
-  StartSensitivity,
-  type LiveConnectConfig,
-} from "@google/genai";
+import { ActivityHandling, GoogleGenAI, Modality, StartSensitivity, type LiveConnectConfig } from "@google/genai";
 import { env, requireEnv } from "@/lib/env";
-import { buildSystemInstruction } from "@/lib/interview/prompt";
+import type { CandidateMemory } from "@/lib/interview/memory";
+import { buildResumeNote, buildSystemInstruction } from "@/lib/interview/prompt";
 import { interviewTools } from "@/lib/interview/tools";
 import type { JobBrief } from "@/lib/job";
 
@@ -22,29 +17,41 @@ export interface LiveTokenResult {
 
 const SESSION_MINUTES = 30;
 
+/**
+ * Turn-taking, from Raphaël's "Stop noise from interrupting Camille" (2622617): the interviewer is
+ * never interrupted (room noise or the echo of her own voice used to cut her off mid-sentence),
+ * speech must last 300 ms and be clear before it counts, and the candidate may pause 1.2 s while
+ * looking for words before the turn passes to the interviewer.
+ */
+const END_OF_SPEECH_SILENCE_MS = 1200;
+const SPEECH_PREFIX_MS = 300;
+
 /** Ephemeral token for the browser. The real API key never leaves the server. */
-export async function createLiveToken(
-  job: JobBrief,
-  opts: { voice?: string } = {},
-): Promise<LiveTokenResult> {
+export async function createLiveToken(input: {
+  job: JobBrief;
+  persona: string;
+  voice: string;
+  /** Set when the call restarts: what was already collected, so the interviewer resumes. */
+  resume?: CandidateMemory;
+}): Promise<LiveTokenResult> {
   const apiKey = requireEnv(env.geminiApiKey(), "GEMINI_API_KEY");
   const model = env.geminiModel();
-  const voice = opts.voice?.trim() || env.geminiVoice();
+  const { voice } = input;
 
   const config: LiveConnectConfig = {
     responseModalities: [Modality.AUDIO],
-    systemInstruction: buildSystemInstruction(job),
+    systemInstruction:
+      buildSystemInstruction(input.job, input.persona, voice) + (input.resume ? buildResumeNote(input.resume) : ""),
     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
     tools: [{ functionDeclarations: interviewTools }],
     inputAudioTranscription: {},
     outputAudioTranscription: {},
-    // Camille finishes her line even if the mic picks up noise; then she listens.
     realtimeInputConfig: {
       activityHandling: ActivityHandling.NO_INTERRUPTION,
       automaticActivityDetection: {
         startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-        prefixPaddingMs: 300,
-        silenceDurationMs: 1200,
+        prefixPaddingMs: SPEECH_PREFIX_MS,
+        silenceDurationMs: END_OF_SPEECH_SILENCE_MS,
       },
     },
   };

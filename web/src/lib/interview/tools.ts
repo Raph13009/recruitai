@@ -11,7 +11,7 @@ export const interviewTools: FunctionDeclaration[] = [
   {
     name: "record_candidate_fact",
     description:
-      "Enregistre une information utile et appropriée liée au travail que le candidat vient de dire, avec ses propres mots. N'enregistre jamais de propos illégaux, violents, sexuels, abusifs ou absurdes.",
+      "Enregistre une information utile et appropriée liée au travail que le candidat vient de dire, avec ses propres mots. N'enregistre jamais une supposition, ni des propos illégaux, violents, sexuels, abusifs ou absurdes.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -63,7 +63,7 @@ export function answerJobQuestion(topic: JobTopic, job: JobBrief): string {
     case "salary":
       return `${job.salary_note}.`;
     case "hours":
-      return `Deux créneaux possibles : ${hours}.`;
+      return job.working_hours.length === 1 ? `L'horaire est ${hours}.` : `Les créneaux possibles sont ${hours}.`;
     case "tasks":
       return `${job.tasks}.`;
     case "contract":
