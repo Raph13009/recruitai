@@ -12,7 +12,7 @@ export const metadata = { title: "Entretien", robots: { index: false, follow: fa
 export default function InterviewPage({ params }: PageProps<"/interview/[token]">) {
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
+      <header className="flex items-center px-4 py-4 sm:px-6">
         {/* No link on the logo: leaving by mistake would end the interview. */}
         <Brand href={null} />
       </header>
@@ -37,13 +37,11 @@ async function Room({ params }: Pick<PageProps<"/interview/[token]">, "params">)
 
 function LobbySkeleton() {
   return (
-    <div aria-hidden className="mx-auto grid w-full max-w-6xl gap-8 px-4 pt-2 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-12">
-      <Skeleton className="aspect-video w-full rounded-3xl" />
-      <div className="space-y-4">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-10 w-3/4" />
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-24 w-full" />
+    <div aria-hidden className="flex min-h-[calc(100svh-4.5rem)] flex-col items-center justify-center px-4">
+      <div className="w-full max-w-2xl space-y-4">
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="aspect-video w-full rounded-2xl" />
+        <Skeleton className="h-11 w-40" />
       </div>
     </div>
   );
