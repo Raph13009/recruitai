@@ -89,13 +89,7 @@ export function CallRoom({
       aria-hidden={!visible}
     >
       <header className="flex items-center gap-3 px-4 py-3 sm:px-6">
-        {logoUrl ? (
-          <AgencyBrandHeader name={agency} logoUrl={logoUrl} className="shrink-0" />
-        ) : (
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand text-brand-foreground">
-            <Waveform className="h-3.5 gap-[2px] [&>span]:w-[2px]" />
-          </span>
-        )}
+        <AgencyBrandHeader name={agency} logoUrl={logoUrl} href={null} className="shrink-0" />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{jobTitle}</p>
           <p className="truncate text-xs text-muted-foreground">{agency}</p>
