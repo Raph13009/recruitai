@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { AudioLinesIcon, DatabaseIcon, ScanFaceIcon } from "lucide-react";
 import { logout } from "@/app/actions/auth";
 import { PageBody, PageHeader, PageIntro, PageSkeleton } from "@/components/recruiter/page-header";
-import { AgencyForm, InterviewerForm } from "@/components/recruiter/settings-forms";
+import { AgencyForm, BrandingForm, InterviewerForm } from "@/components/recruiter/settings-forms";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +80,16 @@ async function Settings() {
         </CardHeader>
         <CardContent>
           <InterviewerForm settings={agency.interviewer} avatarService={avatarService} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Branding</CardTitle>
+          <CardDescription>Logo, bandeau et couleur visibles dans votre espace et chez le candidat.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BrandingForm branding={agency.branding} />
         </CardContent>
       </Card>
 

@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { CheckIcon, Loader2Icon, RefreshCwIcon, ScanFaceIcon } from "lucide-react";
 import { toast } from "sonner";
 import { EMPTY_FORM, type FormState } from "@/app/actions/form-state";
-import { saveAgency, saveInterviewer } from "@/app/actions/settings";
+import { saveAgency, saveBranding, saveInterviewer } from "@/app/actions/settings";
 import { Button } from "@/components/ui/button";
 import {
   Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet,
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import type { InterviewerSettings } from "@/lib/db/types";
+import type { AgencyBranding, InterviewerSettings } from "@/lib/db/types";
 import { VOICES } from "@/lib/interview/voices";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +45,79 @@ export function AgencyForm({ name }: { name: string }) {
         </Field>
       </FieldGroup>
     </form>
+  );
+}
+
+const IMAGE_ACCEPT = "image/png,image/jpeg,image/webp";
+
+export function BrandingForm({ branding }: { branding: AgencyBranding }) {
+  const [state, action, pending] = useActionState(saveBranding, EMPTY_FORM);
+  useSavedToast(state, "Branding enregistré");
+  const errors = state.fieldErrors ?? {};
+  const [accent, setAccent] = useState(branding.accent_color);
+
+  return (
+    // Re-mounts after a save so file inputs and "remove" checkboxes reset to the stored branding.
+    <form action={action} encType="multipart/form-data" key={`${branding.logo_url}|${branding.banner_url}|${branding.accent_color}`}>
+      <FieldGroup>
+        <Field data-invalid={Boolean(errors.accent_color)}>
+          <FieldLabel htmlFor="accent_color">Couleur d’accent</FieldLabel>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              aria-label="Choisir la couleur d’accent"
+              value={/^#[0-9a-f]{6}$/i.test(accent) ? accent : "#000000"}
+              onChange={(e) => setAccent(e.target.value)}
+              className="h-9 w-12 cursor-pointer rounded-md border bg-transparent p-1"
+            />
+            <Input
+              id="accent_color"
+              name="accent_color"
+              value={accent}
+              onChange={(e) => setAccent(e.target.value)}
+              maxLength={7}
+              placeholder="#RRGGBB"
+              aria-invalid={Boolean(errors.accent_color)}
+              className="max-w-32 font-mono"
+              required
+            />
+          </div>
+          {errors.accent_color ? <FieldError>{errors.accent_color}</FieldError> : <FieldDescription>Boutons et accents de votre espace et de l’entretien candidat.</FieldDescription>}
+        </Field>
+
+        <BrandingImageField kind="logo" label="Logo" url={branding.logo_url} error={errors.logo} />
+        <BrandingImageField kind="banner" label="Bandeau" url={branding.banner_url} error={errors.banner} />
+
+        {state.error && !state.fieldErrors && <FieldError>{state.error}</FieldError>}
+
+        <div>
+          <Button type="submit" disabled={pending}>
+            {pending && <Loader2Icon className="animate-spin" />}
+            Enregistrer le branding
+          </Button>
+        </div>
+      </FieldGroup>
+    </form>
+  );
+}
+
+function BrandingImageField({ kind, label, url, error }: { kind: "logo" | "banner"; label: string; url: string | null; error?: string }) {
+  return (
+    <Field data-invalid={Boolean(error)}>
+      <FieldLabel htmlFor={kind}>{label}</FieldLabel>
+      {url && (
+        // eslint-disable-next-line @next/next/no-img-element -- agency-uploaded asset from storage
+        <img src={url} alt={`${label} actuel`} className={cn("rounded-md border bg-muted object-contain", kind === "logo" ? "h-16 w-auto max-w-48" : "h-24 w-full max-w-md object-cover")} />
+      )}
+      <Input id={kind} name={kind} type="file" accept={IMAGE_ACCEPT} aria-invalid={Boolean(error)} className="sm:max-w-sm" />
+      {url && (
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" name={`remove_${kind}`} value="1" />
+          Supprimer {kind === "logo" ? "le logo" : "le bandeau"}
+        </label>
+      )}
+      {error ? <FieldError>{error}</FieldError> : <FieldDescription>PNG, JPEG ou WebP.</FieldDescription>}
+    </Field>
   );
 }
 
