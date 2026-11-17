@@ -19,12 +19,21 @@ export const env = {
   liveAvatarSandbox: () => read("LIVEAVATAR_SANDBOX")?.toLowerCase() !== "false",
   geminiModel: () =>
     read("GEMINI_LIVE_MODEL") ?? "gemini-3.1-flash-live-preview",
+  // Female default for Camille (audio-only / female production avatars).
   geminiVoice: () => read("GEMINI_VOICE") ?? "Aoede",
+  // Male voice matched to the free sandbox Wayne avatar.
+  geminiVoiceMale: () => read("GEMINI_VOICE_MALE") ?? "Charon",
   // Default true (in-memory). Set USE_MOCK_DB=false + SUPABASE_* to use Postgres.
   useMockDb: () => read("USE_MOCK_DB")?.toLowerCase() !== "false",
   supabaseUrl: () => read("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
   supabaseServiceRoleKey: () => read("SUPABASE_SERVICE_ROLE_KEY"),
 };
+
+/** Pick Gemini voice so sandbox Wayne (male) does not speak with a female voice. */
+export function resolveGeminiVoice(opts: { avatar?: boolean } = {}): string {
+  if (opts.avatar && env.liveAvatarSandbox()) return env.geminiVoiceMale();
+  return env.geminiVoice();
+}
 
 export function requireEnv(value: string | undefined, label: string): string {
   if (!value) throw new ConfigError(`${label} manquant côté serveur.`);

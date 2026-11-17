@@ -1,4 +1,4 @@
-import { ConfigError, env, requireEnv } from "@/lib/env";
+import { ConfigError, env, requireEnv, resolveGeminiVoice } from "@/lib/env";
 
 const API_URL = "https://api.liveavatar.com";
 // Sandbox only supports the "Wayne" avatar; the configured avatar (Judy HR) is used outside sandbox.
@@ -43,7 +43,8 @@ export async function createLiteSessionToken(
       secret_id: secretId,
       ...(contextId ? { context_id: contextId } : {}),
       model: env.geminiModel(),
-      voice: env.geminiVoice(),
+      // Sandbox Wayne is male — match voice gender (Aoede would sound mismatched).
+      voice: resolveGeminiVoice({ avatar: true }),
     };
   }
 

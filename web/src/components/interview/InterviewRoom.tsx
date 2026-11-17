@@ -113,6 +113,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
   async function connectGemini(opts: {
     enableMic: boolean;
     playLocalAudio: boolean;
+    avatar?: boolean;
     onPcm?: (b64: string) => void;
   }): Promise<boolean> {
     const live = new GeminiLiveClient(token, geminiHandlers({ onPcm: opts.onPcm }), {
@@ -121,7 +122,11 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     });
     liveRef.current = live;
     try {
-      const info = await postJson<LiveTokenInfo>("/api/gemini/token", { sessionId: id, token });
+      const info = await postJson<LiveTokenInfo>("/api/gemini/token", {
+        sessionId: id,
+        token,
+        avatar: opts.avatar === true,
+      });
       await live.connect(info);
       return true;
     } catch (e) {
@@ -167,6 +172,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
       const ok = await connectGemini({
         enableMic: !textChatRef.current,
         playLocalAudio: false,
+        avatar: true,
         onPcm: (b64) => {
           try {
             session.repeatAudio(b64);
@@ -319,7 +325,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
               selected={mode === "avatar"}
               onSelect={() => setMode("avatar")}
               title="Avatar"
-              text="Camille apparaît en vidéo (bac à sable de démonstration). Bascule en audio si indisponible."
+              text="Vidéo bac à sable (Wayne). Voix homme assortie. Bascule en audio si indisponible."
             />
           </div>
 

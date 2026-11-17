@@ -17,10 +17,13 @@ export interface LiveTokenResult {
 const SESSION_MINUTES = 30;
 
 /** Ephemeral token for the browser. The real API key never leaves the server. */
-export async function createLiveToken(job: JobBrief): Promise<LiveTokenResult> {
+export async function createLiveToken(
+  job: JobBrief,
+  opts: { voice?: string } = {},
+): Promise<LiveTokenResult> {
   const apiKey = requireEnv(env.geminiApiKey(), "GEMINI_API_KEY");
   const model = env.geminiModel();
-  const voice = env.geminiVoice();
+  const voice = opts.voice?.trim() || env.geminiVoice();
 
   const config: LiveConnectConfig = {
     responseModalities: [Modality.AUDIO],
