@@ -11,6 +11,18 @@ export interface GeminiLiveHandlers {
   /** The agent called end_interview and has finished speaking. */
   onEndRequested: () => void;
   onError: (message: string) => void;
+  /**
+   * Optional PCM16 24 kHz mono base64 chunks from the model (for LiveAvatar lip-sync).
+   * When provided with playLocalAudio=false, audio is only forwarded here.
+   */
+  onPcm?: (base64Pcm24k: string) => void;
+}
+
+export interface GeminiLiveOptions {
+  /** Capture and stream the mic (default true). Set false for text-only replies. */
+  enableMic?: boolean;
+  /** Play model audio in the browser (default true). Set false when an avatar plays it. */
+  playLocalAudio?: boolean;
 }
 
 export interface LiveTokenInfo {
@@ -29,6 +41,8 @@ export class GeminiLiveClient {
   private session: Session | null = null;
   private closing = false;
   private paused = false;
+  private micEnabled: boolean;
+  private playLocalAudio: boolean;
   private buffers: Record<Role, string> = { agent: "", candidate: "" };
   private endRequested = false;
   private endFired = false;
@@ -36,7 +50,11 @@ export class GeminiLiveClient {
   constructor(
     private sessionToken: string,
     private handlers: GeminiLiveHandlers,
-  ) {}
+    options: GeminiLiveOptions = {},
+  ) {
+    this.micEnabled = options.enableMic !== false;
+    this.playLocalAudio = options.playLocalAudio !== false;
+  }
 
   async connect(info: LiveTokenInfo): Promise<void> {
     // Ephemeral tokens work with Live API on the v1beta endpoint.
@@ -52,25 +70,41 @@ export class GeminiLiveClient {
         },
       },
     });
-    await this.player.resume();
-    await this.mic.start((chunk) => {
-      if (this.paused || !this.session) return;
-      this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
-    });
+    if (this.playLocalAudio) await this.player.resume();
+    if (this.micEnabled) {
+      await this.mic.start((chunk) => {
+        if (this.paused || !this.session) return;
+        this.session.sendRealtimeInput({ audio: { data: chunk, mimeType: "audio/pcm;rate=16000" } });
+      });
+    }
     this.session.sendRealtimeInput({ text: "Commence l'entretien maintenant." });
+  }
+
+  /** Send a typed candidate reply (and stop treating mic audio as the turn). */
+  sendText(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || !this.session || this.paused) return;
+    this.flush("candidate");
+    this.handlers.onTurn("candidate", trimmed);
+    this.session.sendRealtimeInput({ text: trimmed });
+  }
+
+  setMicEnabled(enabled: boolean) {
+    this.micEnabled = enabled;
+    this.mic.setMuted(!enabled);
   }
 
   async pause() {
     this.paused = true;
     this.mic.setMuted(true);
     this.session?.sendRealtimeInput({ audioStreamEnd: true });
-    await this.player.pause();
+    if (this.playLocalAudio) await this.player.pause();
   }
 
   async resume() {
     this.paused = false;
-    this.mic.setMuted(false);
-    await this.player.resume();
+    if (this.micEnabled) this.mic.setMuted(false);
+    if (this.playLocalAudio) await this.player.resume();
   }
 
   close() {
@@ -91,12 +125,18 @@ export class GeminiLiveClient {
     const content = message.serverContent;
     if (content) {
       for (const part of content.modelTurn?.parts ?? []) {
-        if (part.inlineData?.data) this.player.enqueue(part.inlineData.data);
+        if (part.inlineData?.data) {
+          if (this.playLocalAudio) this.player.enqueue(part.inlineData.data);
+          this.handlers.onPcm?.(part.inlineData.data);
+        }
       }
-      if (content.inputTranscription?.text) this.caption("candidate", content.inputTranscription.text);
+      // Ignore mic STT when the candidate replies by typing (we already recorded the turn).
+      if (content.inputTranscription?.text && this.micEnabled) {
+        this.caption("candidate", content.inputTranscription.text);
+      }
       if (content.outputTranscription?.text) this.caption("agent", content.outputTranscription.text);
       if (content.interrupted) {
-        this.player.interrupt();
+        if (this.playLocalAudio) this.player.interrupt();
         this.flush("agent");
       }
       if (content.turnComplete) {
@@ -153,7 +193,7 @@ export class GeminiLiveClient {
     this.endFired = true;
     const wait = () => {
       if (this.closing) return;
-      if (this.player.isPlaying) setTimeout(wait, 250);
+      if (this.playLocalAudio && this.player.isPlaying) setTimeout(wait, 250);
       else this.handlers.onEndRequested();
     };
     wait();

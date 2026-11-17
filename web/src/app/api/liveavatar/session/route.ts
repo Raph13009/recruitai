@@ -8,6 +8,8 @@ const bodySchema = z.object({
   sessionId: z.string(),
   token: z.string().optional(),
   sandbox: z.boolean().optional(),
+  /** When true, omit the Gemini connector — browser drives Gemini + feeds avatar audio. */
+  clientDriven: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -23,10 +25,13 @@ export async function POST(req: Request) {
   if (session.status === "completed") return fail("Entretien déjà terminé.", 409);
 
   try {
-    const info = await createLiteSessionToken({ sandbox: body.data.sandbox });
+    const info = await createLiteSessionToken({
+      sandbox: body.data.sandbox,
+      clientDriven: body.data.clientDriven === true,
+    });
     await markStarted(session, "avatar");
     await persistSession(session.id);
-    return Response.json(info);
+    return Response.json({ ...info, clientDriven: body.data.clientDriven === true });
   } catch (err) {
     return handleError(err);
   }
