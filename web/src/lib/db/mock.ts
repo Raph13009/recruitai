@@ -180,18 +180,57 @@ export const getTranscript = (sessionId: string) =>
   db().transcripts.filter((t) => t.session_id === sessionId).sort((a, b) => a.seq - b.seq);
 export const getReport = (sessionId: string) => db().reports.find((r) => r.session_id === sessionId) ?? null;
 
-export function createSession(input: { jobId?: string; candidateLabel?: string }): InterviewSession | null {
+export function createSession(input: {
+  jobId?: string;
+  candidateLabel?: string;
+  /** Reuse a known public interview token (needed when a serverless instance lost the in-memory row). */
+  token?: string;
+  id?: string;
+}): InterviewSession | null {
   const store = db();
   const job = input.jobId ? getJob(input.jobId) : defaultJob();
   const config = job && store.interview_configs.find((c) => c.job_id === job.id);
   if (!job || !config) return null;
   const session: InterviewSession = {
-    id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
-    token: newToken(), candidate_label: input.candidateLabel?.trim() || "Candidat anonyme", is_synthetic: false,
-    status: "created", mode: null, memory: emptyMemory(), created_at: now(), started_at: null, completed_at: null,
+    id: input.id || randomUUID(),
+    agency_id: job.agency_id,
+    job_id: job.id,
+    interview_config_id: config.id,
+    token: input.token || newToken(),
+    candidate_label: input.candidateLabel?.trim() || "Candidat anonyme",
+    is_synthetic: false,
+    status: "created",
+    mode: null,
+    memory: emptyMemory(),
+    created_at: now(),
+    started_at: null,
+    completed_at: null,
   };
   store.sessions.push(session);
-  // Fire-and-forget cookie write is not possible here (sync). Callers must await persistSession.
+  return session;
+}
+
+/**
+ * Resolve a session across serverless instances: memory → cookie → recreate from client ids.
+ * This keeps Gemini / LiveAvatar working even without Supabase.
+ */
+export async function ensureSession(input: {
+  sessionId?: string;
+  token?: string;
+  candidateLabel?: string;
+}): Promise<InterviewSession | null> {
+  await hydrateFromCookie();
+  let session =
+    (input.sessionId ? getSessionById(input.sessionId) : null) ??
+    (input.token ? getSessionByToken(input.token) : null);
+  if (session) return session;
+  if (!input.sessionId && !input.token) return null;
+  session = createSession({
+    id: input.sessionId,
+    token: input.token,
+    candidateLabel: input.candidateLabel,
+  });
+  if (session) await persistSession(session.id);
   return session;
 }
 

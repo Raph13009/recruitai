@@ -95,7 +95,7 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
     });
     liveRef.current = live;
     try {
-      const info = await postJson<LiveTokenInfo>("/api/gemini/token", { sessionId: id });
+      const info = await postJson<LiveTokenInfo>("/api/gemini/token", { sessionId: id, token });
       await live.connect(info);
       return true;
     } catch (e) {
@@ -108,7 +108,10 @@ export function InterviewRoom({ payload }: { payload: CandidateSessionPayload })
 
   async function startAvatar(): Promise<boolean> {
     try {
-      const info = await postJson<{ sessionToken: string }>("/api/liveavatar/session", { sessionId: id });
+      const info = await postJson<{ sessionToken: string }>("/api/liveavatar/session", {
+        sessionId: id,
+        token,
+      });
       const { LiveAvatarSession, SessionEvent, AgentEventsEnum } = await import("@heygen/liveavatar-web-sdk");
       const session = new LiveAvatarSession(info.sessionToken, { voiceChat: { defaultMuted: false } });
       avatarRef.current = session;

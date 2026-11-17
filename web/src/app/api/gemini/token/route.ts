@@ -1,19 +1,25 @@
 import { z } from "zod";
 import { fail, handleError, readJson } from "@/lib/api";
-import { defaultJob, getJob, getSessionById, hydrateFromCookie, jobBrief, markStarted, persistSession } from "@/lib/db/mock";
+import { defaultJob, ensureSession, getJob, jobBrief, markStarted, persistSession } from "@/lib/db/mock";
 import { createLiveToken } from "@/lib/gemini/token";
 
-const bodySchema = z.object({ sessionId: z.string().optional() });
+const bodySchema = z.object({
+  sessionId: z.string().optional(),
+  token: z.string().optional(),
+});
 
 export async function POST(req: Request) {
-  await hydrateFromCookie();
   const body = await readJson(req, bodySchema);
   if ("error" in body) return body.error;
 
+  // Never hard-fail the live call just because the in-memory mock DB was cold on this instance.
+  const session = await ensureSession({
+    sessionId: body.data.sessionId,
+    token: body.data.token,
+  });
+
   let job = defaultJob();
-  if (body.data.sessionId) {
-    const session = getSessionById(body.data.sessionId);
-    if (!session) return fail("Session introuvable.", 404);
+  if (session) {
     if (session.status === "completed") return fail("Entretien déjà terminé.", 409);
     job = getJob(session.job_id) ?? job;
     markStarted(session, "audio");
