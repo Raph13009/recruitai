@@ -1,39 +1,87 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowRightIcon, AudioLinesIcon, BanIcon, CaptionsIcon, CheckIcon, EraserIcon, EyeIcon, FileTextIcon,
-  LinkIcon, MessageSquareOffIcon, RotateCcwIcon, ScanFaceIcon, SendIcon, ShieldCheckIcon, UserRoundCheckIcon,
+  ArrowRightIcon, AudioLinesIcon, BanIcon, BriefcaseIcon, CaptionsIcon, EraserIcon, FileTextIcon, HeartHandshakeIcon,
+  MessageSquareOffIcon, PackageIcon, RotateCcwIcon, ScanFaceIcon, ShieldCheckIcon, ShoppingBagIcon, UserRoundCheckIcon,
+  UtensilsIcon,
 } from "lucide-react";
-import { CallMockup } from "@/components/site/call-mockup";
+import { CallMockup as VideoCallPicture } from "@/components/site/call-mockup";
+import { CallMockup, InviteMockup, JobMockup, ReportMockup } from "@/components/site/landing/app-mockups";
+import { Hero } from "@/components/site/landing/hero";
+import { ProductTour } from "@/components/site/landing/product-tour";
+import { RevealObserver } from "@/components/site/landing/reveal-observer";
+import { RolesMarquee } from "@/components/site/landing/roles-marquee";
 import { SiteFooter } from "@/components/site/site-footer";
 import { SiteHeader } from "@/components/site/site-header";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 /**
- * Optional still of the AI interviewer for the hero (16:9, at least 1280 px wide). Drop a file at
- * web/public/interviewer.jpg to use it; without it the hero shows the voice presence instead.
+ * Optional still of the AI interviewer (16:9, at least 1280 px wide) for the video-call picture.
+ * Drop a file at web/public/interviewer.jpg; without it the picture shows the voice presence.
  */
-const HERO_PORTRAIT = existsSync(path.join(process.cwd(), "public", "interviewer.jpg")) ? "/interviewer.jpg" : undefined;
+const PORTRAIT = existsSync(path.join(process.cwd(), "public", "interviewer.jpg")) ? "/interviewer.jpg" : undefined;
 
-const STEPS = [
+/** Stagger index for scroll reveals. */
+const at = (i: number) => ({ "--reveal-i": i }) as CSSProperties;
+
+const TOUR = [
+  { id: "poste", title: "Le poste", text: "Lieu, horaires, salaire, tâches : la seule source de l’IA.", panel: <JobMockup /> },
+  { id: "lien", title: "Le lien", text: "Un lien par candidat, par SMS ou e-mail. Rien à installer.", panel: <InviteMockup /> },
+  { id: "entretien", title: "L’entretien", text: "Cinq minutes en visio, quand le candidat le veut.", panel: <CallMockup /> },
+  { id: "compte-rendu", title: "Le compte rendu", text: "Ses mots exacts, les écarts à relire, aucune note.", panel: <ReportMockup /> },
+];
+
+const TRADES = [
   {
-    icon: FileTextIcon,
-    title: "Décrivez le poste",
-    text: "Lieu, horaires, salaire, tâches. Cette fiche est la seule source de l’IA : elle n’invente rien.",
+    tag: "Logistique",
+    icon: PackageIcon,
+    title: "Agents de quai, préparateurs, caristes",
+    text: "Pics d’activité, dizaines de profils à rappeler dans la semaine : chacun passe son entretien dès qu’il reçoit le lien.",
   },
   {
-    icon: SendIcon,
-    title: "Envoyez le lien",
-    text: "Un lien par candidat, par SMS ou e-mail. L’entretien se passe sur téléphone ou ordinateur, sans rien installer.",
+    tag: "Restauration",
+    icon: UtensilsIcon,
+    title: "Serveurs, commis, plonge",
+    text: "Des candidats qui travaillent le soir et le week-end : l’entretien s’adapte à leurs horaires, pas l’inverse.",
   },
   {
-    icon: EyeIcon,
-    title: "Lisez le compte rendu",
-    text: "Les réponses du candidat, mot pour mot, les écarts avec la fiche à relire et la transcription complète.",
+    tag: "Commerce",
+    icon: ShoppingBagIcon,
+    title: "Vendeurs, hôtes de caisse, polyvalents",
+    text: "Les saisonniers arrivent tous en même temps : l’IA les reçoit tous, votre équipe choisit.",
+  },
+  {
+    tag: "Santé et services",
+    icon: HeartHandshakeIcon,
+    title: "Aides-soignants, agents d’entretien",
+    text: "Expérience, disponibilités, créneaux : les faits utiles, sans jamais de question sur la santé ou la vie privée.",
+  },
+  {
+    tag: "Intérim",
+    icon: BriefcaseIcon,
+    title: "Agences et cabinets",
+    text: "Un lien par candidat et par mission, et le même compte rendu pour chaque dossier.",
+  },
+];
+
+const PROBLEMS = [
+  {
+    problem: "Deux cents candidatures, deux recruteurs. Les bons profils attendent un rappel… et signent ailleurs.",
+    answer: "Chaque candidat passe son entretien tout de suite.",
+    detail: "Le soir, le week-end, depuis son téléphone : il n’attend plus que vous soyez disponible.",
+  },
+  {
+    problem: "Des notes d’appel qui changent d’un recruteur à l’autre et ne se comparent pas.",
+    answer: "Le même compte rendu pour tous.",
+    detail: "Expérience, disponibilité, créneau, salaire, questions : avec les mots exacts du candidat.",
+  },
+  {
+    problem: "Des outils de tri qui notent les gens sans dire pourquoi.",
+    answer: "Aucune note, aucune décision.",
+    detail: "L’IA se présente comme une IA et recueille des faits. Votre équipe lit et décide.",
   },
 ];
 
@@ -41,17 +89,17 @@ const PRESENCE = [
   {
     icon: ScanFaceIcon,
     title: "Un visage, pas un robot",
-    text: "Avatar vidéo photoréaliste, lèvres synchronisées sur la voix. Choisissez un visage dans la bibliothèque, ou celui d’un de vos recruteurs, créé à partir d’une vidéo de deux minutes et avec son accord.",
+    text: "Avatar vidéo photoréaliste, lèvres synchronisées sur la voix. Un visage de la bibliothèque, ou celui d’un de vos recruteurs, avec son accord.",
   },
   {
     icon: AudioLinesIcon,
-    title: "Une voix qui réagit",
-    text: "La voix est générée en temps réel. L’IA rebondit sur chaque réponse, demande un exemple quand c’est vague et recadre poliment quand c’est hors sujet. Le bruit ambiant ne la coupe pas.",
+    title: "Une voix qui rebondit",
+    text: "Elle demande un exemple quand c’est vague, recadre poliment quand c’est hors sujet, et le bruit ambiant ne la coupe pas.",
   },
   {
     icon: CaptionsIcon,
     title: "Accessible",
-    text: "Sous-titres en direct, réponse par écrit possible, et un écran pensé pour le téléphone autant que pour l’ordinateur.",
+    text: "Sous-titres en direct, réponses écrites possibles, sur téléphone comme sur ordinateur.",
   },
   {
     icon: RotateCcwIcon,
@@ -69,6 +117,13 @@ const GUARDRAILS = [
   { icon: EraserIcon, title: "Effacement", text: "Un entretien se supprime en un clic, transcription et compte rendu compris." },
 ];
 
+const FIGURES = [
+  { value: "5 min", label: "pour un entretien complet" },
+  { value: "24 h/24", label: "le candidat choisit son moment" },
+  { value: "100 %", label: "des réponses sur le poste tirées de votre fiche" },
+  { value: "0", label: "note, classement ou décision automatique" },
+];
+
 const FAQ = [
   {
     q: "Le candidat sait-il qu’il parle à une IA ?",
@@ -84,7 +139,7 @@ const FAQ = [
   },
   {
     q: "Le candidat doit-il installer une application ?",
-    a: "Non. Un navigateur récent et un micro suffisent, sur téléphone ou ordinateur. La caméra est facultative.",
+    a: "Non. Un navigateur récent suffit, sur téléphone ou ordinateur. Sans micro, il peut répondre par écrit ; la caméra est facultative.",
   },
   {
     q: "Peut-on donner à l’intervieweur le visage d’un de nos recruteurs ?",
@@ -98,235 +153,208 @@ const FAQ = [
 
 export default function Home() {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col font-grotesk">
       <SiteHeader />
       <main className="flex-1">
-        {/* Hero */}
-        <section className="mx-auto grid w-full max-w-6xl items-center gap-14 px-4 pb-20 pt-10 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-16">
-          <div>
-            <Badge variant="secondary" className="h-6 px-3 text-xs">Entretien vidéo par IA · intérim et volume</Badge>
-            <h1 className="display mt-5 text-[clamp(2.6rem,6.5vw,4.6rem)] font-semibold leading-[1.02]">
-              Le premier entretien, en visio, mené par une <em className="font-normal text-primary">IA</em>.
-            </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-              Un visage photoréaliste, une voix qui répond du tac au tac et rebondit sur chaque réponse. Vos candidats
-              passent l’entretien quand ils veulent ; votre équipe lit un compte rendu factuel et décide.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg" className="h-11 rounded-full px-6 text-base">
-                <Link href="/demo">
-                  Essayer l’entretien <ArrowRightIcon />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg" className="h-11 rounded-full px-6 text-base">
-                <Link href="/signup">Créer un compte agence</Link>
-              </Button>
+        <Hero />
+        <RolesMarquee />
+
+        <Section id="fonctionnement">
+          <Title>Une plateforme pour recevoir tous vos candidats</Title>
+          <div data-reveal className="mt-12">
+            <ProductTour steps={TOUR} />
+          </div>
+        </Section>
+
+        <Section id="metiers" tone="band">
+          <Title intro="Les postes où le premier appel prend le plus de temps : beaucoup de candidats, des horaires décalés, peu de recruteurs.">
+            Pensé pour vos métiers en tension
+          </Title>
+          <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {TRADES.map((trade, i) => (
+              <li key={trade.tag} data-reveal style={at(i)}>
+                <article className="group flex h-full flex-col rounded-2xl bg-card p-6 ring-1 ring-border transition-shadow duration-200 [@media(hover:hover)]:hover:shadow-[0_24px_50px_-30px_rgb(22_33_43/0.35)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="grid size-10 place-items-center rounded-xl bg-accent text-accent-foreground">
+                      <trade.icon className="size-5" />
+                    </span>
+                    <span className="rounded-md bg-secondary px-2 py-1 text-xs text-muted-foreground">{trade.tag}</span>
+                  </div>
+                  <h3 className="mt-8 text-xl tracking-tight">{trade.title}</h3>
+                  <p className="mt-3 flex-1 leading-relaxed text-muted-foreground">{trade.text}</p>
+                  <Link href="/demo" className="mt-6 inline-flex w-fit items-center gap-1.5 font-medium text-primary">
+                    Essayer <ArrowRightIcon className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+                  </Link>
+                </article>
+              </li>
+            ))}
+            <li data-reveal style={at(TRADES.length)}>
+              <Link
+                href="/demo"
+                className="press group flex h-full min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-primary/35 p-6 text-center transition-colors hover:bg-card"
+              >
+                <ArrowRightIcon className="size-6 text-primary transition-transform duration-200 group-hover:translate-x-1" />
+                <span className="text-lg">Passer l’entretien de démonstration</span>
+                <span className="text-sm text-muted-foreground">Un poste fictif, cinq minutes, sans inscription.</span>
+              </Link>
+            </li>
+          </ul>
+        </Section>
+
+        <Section id="pourquoi">
+          <Title>Le premier appel est le goulot de vos recrutements. On l’a repensé.</Title>
+          <div className="mx-auto mt-14 max-w-5xl divide-y divide-border border-y border-border">
+            {PROBLEMS.map((row, i) => (
+              <div key={row.answer} data-reveal style={at(i)} className="grid gap-6 py-8 md:grid-cols-2 md:gap-12">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Le problème</p>
+                  <p className="mt-3 text-lg leading-relaxed text-foreground/70">{row.problem}</p>
+                </div>
+                <div className="md:border-l md:border-border md:pl-12">
+                  <p className="text-xs uppercase tracking-[0.16em] text-primary">Avec RecruitAI</p>
+                  <p className="mt-3 text-2xl tracking-tight">{row.answer}</p>
+                  <p className="mt-2 leading-relaxed text-muted-foreground">{row.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="visio" tone="band">
+          <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_1fr]">
+            <div data-reveal>
+              <VideoCallPicture portrait={PORTRAIT} className="mx-auto w-full max-w-xl lg:max-w-none" />
             </div>
-            <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-              {["L’IA se présente comme une IA", "Aucun score, aucune décision", "Seul le texte est conservé"].map((point) => (
-                <li key={point} className="flex items-center gap-1.5">
-                  <CheckIcon className="size-4 text-primary" /> {point}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <CallMockup portrait={HERO_PORTRAIT} className="mx-auto w-full max-w-xl lg:max-w-none" />
-        </section>
-
-        {/* How it works */}
-        <section id="fonctionnement" className="scroll-mt-20 border-t bg-card/50">
-          <div className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
-            <p className="eyebrow">Fonctionnement</p>
-            <h2 className="display mt-3 max-w-2xl text-4xl font-semibold leading-tight">
-              Trois étapes, et le premier tri ne vous prend plus vos journées.
-            </h2>
-            <ol className="mt-12 grid gap-5 md:grid-cols-3">
-              {STEPS.map((step, i) => (
-                <li key={step.title}>
-                  <Card className="h-full">
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span className="grid size-9 place-items-center rounded-full bg-accent text-accent-foreground">
-                          <step.icon className="size-4" />
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">0{i + 1}</span>
-                      </div>
-                      <h3 className="text-lg font-semibold">{step.title}</h3>
-                      <p className="text-muted-foreground">{step.text}</p>
-                    </CardContent>
-                  </Card>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
-        {/* The video call */}
-        <section id="visio" className="scroll-mt-20">
-          <div className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
             <div>
-              <p className="eyebrow">La visio</p>
-              <h2 className="display mt-3 text-4xl font-semibold leading-tight">
-                Une vraie présence face au candidat.
-              </h2>
-              <p className="mt-4 text-lg text-muted-foreground">
-                Le candidat voit un visage, entend une voix naturelle et parle normalement, comme en visio avec un
-                recruteur. Derrière, chaque réponse est rangée au bon endroit du compte rendu.
-              </p>
-              <Button asChild variant="link" className="mt-4 h-auto px-0 text-base">
-                <Link href="/demo">
-                  Le tester vous-même <ArrowRightIcon />
-                </Link>
-              </Button>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {PRESENCE.map((item) => (
-                <Card key={item.title}>
-                  <CardContent className="space-y-2.5">
+              <div data-reveal>
+                <p className="eyebrow">La visio</p>
+                <h2 className="headline mt-4 text-[clamp(2.2rem,4.2vw,3.25rem)] text-foreground/90">
+                  Une vraie présence face au candidat.
+                </h2>
+                <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+                  Le candidat voit un visage, entend une voix naturelle et répond comme en visio avec un recruteur.
+                  Derrière, chaque réponse est rangée au bon endroit du compte rendu.
+                </p>
+              </div>
+              <ul className="mt-9 grid gap-x-8 gap-y-7 sm:grid-cols-2">
+                {PRESENCE.map((item, i) => (
+                  <li key={item.title} data-reveal style={at(i)}>
                     <item.icon className="size-5 text-primary" />
-                    <h3 className="font-semibold">{item.title}</h3>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{item.text}</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* What the recruiter reads */}
-        <section className="border-y bg-card/50">
-          <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-2">
-            <ReportPreview />
-            <div>
-              <p className="eyebrow">Le compte rendu</p>
-              <h2 className="display mt-3 text-4xl font-semibold leading-tight">Des faits, avec les mots du candidat.</h2>
-              <p className="mt-4 text-lg text-muted-foreground">
-                Chaque information garde la phrase exacte du candidat, à côté de sa forme normalisée. Les écarts avec
-                la fiche (une disponibilité tardive, une attente salariale différente) sont signalés, sans jugement.
-              </p>
-              <ul className="mt-6 space-y-2.5 text-muted-foreground">
-                {[
-                  "Transcription complète de l’échange",
-                  "Points à relire, informations non recueillies",
-                  "Impression ou export en PDF pour le dossier",
-                ].map((point) => (
-                  <li key={point} className="flex items-center gap-2">
-                    <CheckIcon className="size-4 text-primary" /> {point}
+                    <h3 className="mt-3 text-lg tracking-tight">{item.title}</h3>
+                    <p className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground">{item.text}</p>
                   </li>
                 ))}
               </ul>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {/* Guardrails */}
-        <section id="garde-fous" className="scroll-mt-20">
-          <div className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
-            <p className="eyebrow">Garde-fous</p>
-            <h2 className="display mt-3 max-w-2xl text-4xl font-semibold leading-tight">
-              L’IA recueille. L’humain décide.
+        <Section>
+          <div className="grid gap-10 lg:grid-cols-2 lg:gap-20">
+            <h2 data-reveal className="headline text-[clamp(2.4rem,4.6vw,3.6rem)] text-foreground/90">
+              Le premier entretien n’est pas une formalité. C’est votre marque employeur.
             </h2>
-            <div className="mt-12 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
-              {GUARDRAILS.map((item) => (
-                <div key={item.title} className="flex gap-4">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-                    <item.icon className="size-5" />
-                  </span>
-                  <div>
-                    <h3 className="font-semibold">{item.title}</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{item.text}</p>
-                  </div>
-                </div>
-              ))}
+            <div data-reveal style={at(1)} className="space-y-5 self-end text-lg leading-relaxed text-muted-foreground">
+              <p>
+                Un candidat qui attend trois jours un rappel ne décroche plus. Un candidat reçu tout de suite, avec
+                respect et transparence, se souvient de vous.
+              </p>
+              <p>
+                RecruitAI prend la partie répétitive (les mêmes cinq questions, deux cents fois) pour que vos
+                recruteurs passent leur temps là où il compte : avec les bonnes personnes.
+              </p>
             </div>
           </div>
-        </section>
+        </Section>
 
-        {/* FAQ */}
-        <section id="faq" className="scroll-mt-20 border-t bg-card/50">
-          <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.8fr_1.2fr]">
-            <div>
-              <p className="eyebrow">Questions</p>
-              <h2 className="display mt-3 text-4xl font-semibold leading-tight">Ce qu’on nous demande souvent.</h2>
-            </div>
-            <Accordion type="single" collapsible className="w-full">
-              {FAQ.map((item, i) => (
-                <AccordionItem key={item.q} value={`q${i}`}>
-                  <AccordionTrigger className="text-base">{item.q}</AccordionTrigger>
-                  <AccordionContent className="text-base leading-relaxed text-muted-foreground">{item.a}</AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
-        </section>
+        <Section id="garde-fous" tone="band">
+          <Title intro="Six règles inscrites dans le produit, pas dans une charte.">L’IA recueille. L’humain décide.</Title>
+          <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {GUARDRAILS.map((item, i) => (
+              <li key={item.title} data-reveal style={at(i)} className="rounded-2xl bg-card p-6 ring-1 ring-border">
+                <span className="grid size-10 place-items-center rounded-xl bg-accent text-accent-foreground">
+                  <item.icon className="size-5" />
+                </span>
+                <h3 className="mt-5 text-lg tracking-tight">{item.title}</h3>
+                <p className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground">{item.text}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
 
-        {/* Final call to action */}
-        <section className="mx-auto w-full max-w-6xl px-4 py-20 sm:px-6">
-          <div className="relative overflow-hidden rounded-3xl bg-brand px-6 py-14 text-center text-brand-foreground sm:px-12">
-            <h2 className="display mx-auto max-w-2xl text-4xl font-semibold leading-tight">
-              Passez l’entretien vous-même : cinq minutes suffisent.
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-brand-foreground/80">
-              Puis ouvrez le compte rendu dans l’espace recruteur de démonstration.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button asChild size="lg" className="h-11 rounded-full bg-brand-foreground px-6 text-base text-brand hover:bg-brand-foreground/90">
-                <Link href="/demo">
-                  Essayer l’entretien <ArrowRightIcon />
-                </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="h-11 rounded-full border-brand-foreground/40 bg-transparent px-6 text-base text-brand-foreground hover:bg-brand-foreground/10 hover:text-brand-foreground dark:border-brand-foreground/40 dark:bg-transparent"
+        <Section>
+          <dl className="grid grid-cols-2 gap-y-12 lg:grid-cols-4">
+            {FIGURES.map((figure, i) => (
+              <div
+                key={figure.value}
+                data-reveal
+                style={at(i)}
+                className={cn("px-4 text-center sm:px-8", i > 0 && "lg:border-l lg:border-border", i % 2 === 1 && "max-lg:border-l max-lg:border-border")}
               >
-                <Link href="/login">
-                  <LinkIcon /> Voir l’espace recruteur
-                </Link>
-              </Button>
-            </div>
+                <dt className="headline text-[clamp(2.8rem,5vw,4rem)] text-primary">{figure.value}</dt>
+                <dd className="mx-auto mt-3 max-w-[14rem] text-[15px] leading-snug text-muted-foreground">{figure.label}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-10 text-center text-sm text-muted-foreground/80">Caractéristiques du produit, pas des moyennes clients.</p>
+        </Section>
+
+        <Section id="faq" tone="band">
+          <Title>Foire aux questions</Title>
+          <Accordion data-reveal type="single" collapsible className="mx-auto mt-10 w-full max-w-3xl">
+            {FAQ.map((item, i) => (
+              <AccordionItem key={item.q} value={`q${i}`} className="border-border">
+                <AccordionTrigger className="items-center py-5 text-[17px] hover:no-underline">{item.q}</AccordionTrigger>
+                <AccordionContent className="text-base leading-relaxed text-muted-foreground">{item.a}</AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </Section>
+
+        <section className="px-6 py-20 text-center sm:py-32">
+          <h2 data-reveal className="headline mx-auto max-w-5xl text-[clamp(2.6rem,6vw,5rem)] text-foreground/90">
+            Vos candidats méritent mieux qu’un rappel dans trois jours.
+          </h2>
+          <p data-reveal style={at(1)} className="mx-auto mt-7 max-w-xl text-lg leading-relaxed text-muted-foreground">
+            Passez l’entretien vous-même : cinq minutes suffisent. Puis ouvrez le compte rendu dans l’espace recruteur
+            de démonstration.
+          </p>
+          <div data-reveal style={at(2)} className="mt-10 flex flex-wrap justify-center gap-3">
+            <Link
+              href="/demo"
+              className="press inline-flex h-12 items-center gap-2 rounded-md bg-primary px-7 text-[15px] font-medium text-primary-foreground transition-colors hover:bg-[#0a4f44]"
+            >
+              Essayer l’entretien <ArrowRightIcon className="size-4" />
+            </Link>
+            <Link
+              href="/signup"
+              className="press inline-flex h-12 items-center rounded-md border border-border bg-card px-7 text-[15px] font-medium transition-colors hover:bg-secondary"
+            >
+              Créer un compte agence
+            </Link>
           </div>
         </section>
       </main>
       <SiteFooter />
+      <RevealObserver />
     </div>
   );
 }
 
-function ReportPreview() {
-  const rows = [
-    { label: "Disponibilité", raw: "Je suis disponible immédiatement", value: "immédiate" },
-    { label: "Créneau", raw: "Le premier, celui du matin", value: "6:00–13:00" },
-    { label: "Attente salariale", raw: "Autour de 13 euros de l’heure", value: "13 € brut/h" },
-  ];
+/** A page section; `band` sets it on the slightly darker paper, like a printed band. */
+function Section({ id, tone, children }: { id?: string; tone?: "band"; children: ReactNode }) {
   return (
-    <Card className="mx-auto w-full max-w-lg shadow-xl">
-      <CardContent className="space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-semibold">Léa M.</p>
-            <p className="text-sm text-muted-foreground">Agent de quai · Lyon</p>
-          </div>
-          <Badge variant="secondary">Terminé · 5 min</Badge>
-        </div>
-        <dl className="space-y-3 text-sm">
-          {rows.map((row) => (
-            <div key={row.label} className="grid gap-1 sm:grid-cols-[8.5rem_1fr]">
-              <dt className="text-muted-foreground">{row.label}</dt>
-              <dd>
-                « {row.raw} »
-                <span className="ml-2 rounded bg-accent px-1.5 py-0.5 text-xs text-accent-foreground">{row.value}</span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <div className="rounded-xl border bg-muted/50 p-3 text-sm">
-          <p className="font-medium">À relire</p>
-          <p className="mt-1 text-muted-foreground">Attente salariale déclarée : 13 € brut/h. Fiche : 12,50 € brut/h.</p>
-        </div>
-        <p className="text-xs text-muted-foreground">Score, classement, recommandation : vides par conception.</p>
-      </CardContent>
-    </Card>
+    <section id={id} className={cn("scroll-mt-16", tone === "band" && "bg-[#ebe7df]/70")}>
+      <div className="mx-auto w-full max-w-7xl px-6 py-16 sm:px-8 sm:py-24 lg:py-28">{children}</div>
+    </section>
+  );
+}
+
+function Title({ intro, children }: { intro?: string; children: ReactNode }) {
+  return (
+    <div data-reveal className="mx-auto max-w-3xl text-center">
+      <h2 className="headline text-[clamp(2.2rem,4.4vw,3.4rem)] text-foreground/90">{children}</h2>
+      {intro && <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground">{intro}</p>}
+    </div>
   );
 }

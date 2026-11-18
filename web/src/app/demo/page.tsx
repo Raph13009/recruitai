@@ -15,12 +15,12 @@ export const metadata = {
 
 export default function DemoPage({ searchParams }: PageProps<"/demo">) {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col font-grotesk">
       <header className="px-4 py-5 sm:px-6">
         <Brand />
       </header>
       <main className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 pb-16 sm:px-6">
-        <h1 className="display text-3xl font-semibold leading-tight sm:text-4xl">
+        <h1 className="headline text-4xl text-foreground/90 sm:text-5xl">
           Choisir un scénario
         </h1>
         <p className="mt-3 text-muted-foreground">

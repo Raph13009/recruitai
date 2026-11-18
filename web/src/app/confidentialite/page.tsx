@@ -48,11 +48,11 @@ const SECTIONS: { title: string; body: string[] }[] = [
 
 export default function PrivacyPage() {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col font-grotesk">
       <SiteHeader />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20 pt-10 sm:px-6">
         <p className="eyebrow">Confidentialité</p>
-        <h1 className="display mt-3 text-4xl font-semibold leading-tight sm:text-5xl">Vos données, en clair.</h1>
+        <h1 className="headline mt-4 text-[clamp(2.5rem,6vw,3.75rem)] text-foreground/90">Vos données, en clair.</h1>
         <p className="mt-4 text-lg text-muted-foreground">
           Ce que RecruitAI conserve pendant un entretien, ce qu’il ne conserve pas, et qui y a accès.
         </p>

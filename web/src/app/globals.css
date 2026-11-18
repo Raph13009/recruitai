@@ -14,6 +14,8 @@
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
   --font-heading: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Public pages (home, demo, sign-in): a tight grotesque for large headlines. */
+  --font-grotesk: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -66,6 +68,12 @@
   --animate-ring-out: ring-out 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
   --animate-breathe: breathe 5s ease-in-out infinite;
   --animate-rise: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  /* Home page: the drifting wall of interview cards, the roles band, the headline entrance. */
+  --animate-wall-up: wall-up var(--wall-duration, 60s) linear infinite;
+  --animate-wall-down: wall-down var(--wall-duration, 60s) linear infinite;
+  --animate-marquee: marquee var(--marquee-duration, 48s) linear infinite;
+  --animate-hero-in: hero-in 0.9s cubic-bezier(0.23, 1, 0.32, 1) both;
+  --animate-tour-progress: tour-progress var(--tour-duration, 7s) linear forwards;
 
   @keyframes voice-bar {
     0%, 100% { transform: scaleY(0.25); }
@@ -83,10 +91,34 @@
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  /* The wall and the band hold their content twice: moving by half loops seamlessly. */
+  @keyframes wall-up {
+    from { transform: translateY(0); }
+    to { transform: translateY(-50%); }
+  }
+  @keyframes wall-down {
+    from { transform: translateY(-50%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  @keyframes hero-in {
+    from { opacity: 0; transform: translateY(18px); filter: blur(6px); }
+    to { opacity: 1; transform: none; filter: none; }
+  }
+  @keyframes tour-progress {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
 }
 
 :root {
   --radius: 0.75rem;
+  /* Strong curves: quick response, soft landing (entrances), and natural on-screen moves. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
 
   --background: #f2efe9; /* paper */
   --foreground: #16212b; /* ink */
@@ -196,6 +228,86 @@
   }
   .eyebrow {
     @apply text-xs font-medium uppercase tracking-[0.14em] text-primary;
+  }
+  /* Large grotesque headlines of the public pages: regular weight, tight tracking. */
+  .headline {
+    font-family: var(--font-grotesk);
+    font-weight: 400;
+    letter-spacing: -0.045em;
+    line-height: 0.98;
+    text-wrap: balance;
+  }
+  /* Home page hero: a deep teal-ink stage, like a video still. */
+  .hero-stage {
+    background:
+      radial-gradient(ellipse 60% 55% at 80% 15%, rgb(15 107 92 / 0.55), transparent 70%),
+      radial-gradient(ellipse 55% 60% at 10% 105%, rgb(15 107 92 / 0.25), transparent 70%),
+      #0f1f1e;
+  }
+  /* Film grain for dark surfaces. */
+  .grain-light {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  /* Press feedback on large buttons of the public pages. */
+  .press {
+    transition: transform 160ms var(--ease-out-strong);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+}
+
+/*
+ * Scroll reveals (RevealObserver marks [data-reveal] elements once they enter the viewport).
+ * Hidden only when scripts run, so the page stays readable without JavaScript.
+ */
+[data-reveal] {
+  transition:
+    opacity 0.7s var(--ease-out-strong),
+    transform 0.7s var(--ease-out-strong);
+  transition-delay: calc(var(--reveal-i, 0) * 70ms);
+}
+@media (scripting: enabled) {
+  [data-reveal]:not([data-shown]) {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+/* Product tour panels: crossfade with a light blur so the two states read as one change. */
+.tour-panel {
+  transition:
+    opacity 0.45s var(--ease-out-strong),
+    transform 0.45s var(--ease-out-strong),
+    filter 0.45s var(--ease-out-strong);
+}
+.tour-panel:not([data-active]) {
+  opacity: 0;
+  transform: translateY(8px) scale(0.99);
+  filter: blur(6px);
+  pointer-events: none;
+}
+.tour-panel[data-active] [data-stagger] > * {
+  animation: hero-in 0.6s var(--ease-out-strong) both;
+  animation-delay: calc(var(--i, 0) * 80ms + 120ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    transition-property: opacity;
+    transition-duration: 0.3s;
+  }
+  [data-reveal]:not([data-shown]) {
+    transform: none;
+  }
+  .tour-panel,
+  .tour-panel:not([data-active]) {
+    transform: none;
+    filter: none;
+  }
+  .tour-panel[data-active] [data-stagger] > *,
+  .animate-hero-in {
+    animation: none;
   }
 }
 

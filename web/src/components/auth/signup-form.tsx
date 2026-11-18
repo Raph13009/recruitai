@@ -17,7 +17,7 @@ export function SignupForm() {
     <form action={action}>
       <FieldGroup>
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="display text-3xl font-semibold">Créer un compte</h1>
+          <h1 className="headline text-4xl">Créer un compte</h1>
           <p className="text-balance text-sm text-muted-foreground">
             Votre agence, un premier poste, et vos candidats passent l’entretien dans la journée.
           </p>

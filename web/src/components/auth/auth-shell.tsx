@@ -12,7 +12,7 @@ const POINTS = [
 /** Two-column card shared by the sign-in and sign-up pages: the form, and what the product does. */
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className="flex min-h-svh flex-col font-grotesk">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
         <Brand />
       </header>
@@ -23,7 +23,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
             <aside className="relative hidden flex-col justify-between bg-brand p-8 text-brand-foreground md:flex">
               <Waveform className="h-10 gap-1.5 text-accent [&>span]:w-1.5" />
               <div>
-                <p className="display text-2xl font-semibold leading-snug">
+                <p className="headline text-[2rem] leading-[1.05]">
                   L’IA recueille les faits. Votre équipe décide.
                 </p>
                 <ul className="mt-6 space-y-3 text-sm text-brand-foreground/85">

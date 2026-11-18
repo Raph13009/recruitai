@@ -17,7 +17,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
       <form action={action}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="display text-3xl font-semibold">Connexion</h1>
+            <h1 className="headline text-4xl">Connexion</h1>
             <p className="text-balance text-muted-foreground">Accédez à l’espace recruteur de votre agence.</p>
           </div>
           <Field>
