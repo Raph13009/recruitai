@@ -1,11 +1,7 @@
 # RecruitAI — private stack for Dokploy (Compose).
-# - web: Next.js (no host ports; Traefik via dokploy-network)
-# - db: PostgreSQL private (no public ports)
-# - backup: daily pg_dump to volume (copy off-server separately)
-#
-# Secrets via Dokploy Compose env / .env — never commit real values.
-# Test host (until cutover): recruitai-test.boostaiconsulting.com
-# Production host (cutover only after approval): recruitai.boostaiconsulting.com
+# Git source: https://github.com/Raph13009/recruitai (branch migrate/dokploy-private-pg)
+# Test host: recruitai-test.boostaiconsulting.com
+# DB has NO public ports. Migration talks to db over recruitai_internal only.
 
 services:
   db:
@@ -17,7 +13,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
     volumes:
       - recruitai_pg_data:/var/lib/postgresql/data
-      - ../postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     networks:
       - recruitai_internal
     healthcheck:
@@ -26,7 +21,28 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    # No ports: published — DB is unreachable from the public internet.
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-recruitai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-recruitai}
+      DATABASE_SSL: "false"
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      MIGRATE_WIPE: ${MIGRATE_WIPE:-true}
+      MIGRATE_CLEAN_WORKDIR: "true"
+      RECRUITAI_DATA_DIR: /data
+      SCHEMA_PATH: /migrate/deploy/postgres/schema.sql
+    volumes:
+      - recruitai_branding:/data
+    networks:
+      - recruitai_internal
 
   web:
     build:
@@ -36,6 +52,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       USE_MOCK_DB: "false"
@@ -65,7 +83,7 @@ services:
       - traefik.docker.network=dokploy-network
       - traefik.http.routers.recruitai-web.rule=Host(`${TRAEFIK_HOST:-recruitai-test.boostaiconsulting.com}`)
       - traefik.http.routers.recruitai-web.entrypoints=web
-      - traefik.http.services.recruitai-web.loadbalancer.serviceport=3000
+      - traefik.http.services.recruitai-web.loadbalancer.server.port=3000
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -90,7 +108,6 @@ services:
     networks:
       - recruitai_internal
     entrypoint: ["/bin/sh", "/backup-loop.sh"]
-    # No ports published.
 
 networks:
   recruitai_internal:

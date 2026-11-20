@@ -1,0 +1,15 @@
+# One-shot migrator: Supabase Cloud (HTTPS read-only) → private Postgres on Docker network.
+FROM node:22-bookworm-slim
+WORKDIR /migrate
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY web/package.json web/package-lock.json ./web/
+RUN cd web && npm ci --omit=dev --ignore-scripts
+COPY scripts/migrate ./scripts/migrate
+COPY deploy/postgres/schema.sql ./deploy/postgres/schema.sql
+ENV SCHEMA_PATH=/migrate/deploy/postgres/schema.sql
+ENV MIGRATE_WORKDIR=/tmp/recruitai-migrate
+ENV MIGRATE_CLEAN_WORKDIR=true
+ENV NODE_PATH=/migrate/web/node_modules
+CMD ["node", "scripts/migrate/run-private-migration.mjs"]
