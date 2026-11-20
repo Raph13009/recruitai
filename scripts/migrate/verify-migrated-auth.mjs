@@ -91,7 +91,18 @@ async function main() {
        count(*) filter (where password_hash is not null and not must_reset_password)::int as can_login
      from recruiters`,
   );
-  console.log(JSON.stringify({ phase: "totals", ...totals.rows[0] }));
+  const loginable = await pool.query(
+    `select email from recruiters
+     where password_hash is not null and not must_reset_password
+     order by created_at asc`,
+  );
+  console.log(
+    JSON.stringify({
+      phase: "totals",
+      ...totals.rows[0],
+      can_login_masked: loginable.rows.map((r) => maskEmail(r.email)),
+    }),
+  );
 
   const { rows } = await pool.query(
     `select id, email, must_reset_password, password_hash is null as no_hash
