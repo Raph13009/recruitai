@@ -338,15 +338,18 @@ async function importPrivate() {
   }
 }
 
-async function verify(summary) {
+async function verify(summary, { allowExtra = false } = {}) {
   let ok = true;
   for (const table of TABLES) {
     const { rows } = await pool.query(`select count(*)::int as n from ${table}`);
     const expected = summary.tables[table];
     const actual = rows[0].n;
-    const match = expected === actual;
+    const match = allowExtra ? actual >= expected : expected === actual;
     if (!match) ok = false;
-    log("verify", `${match ? "OK" : "MISMATCH"} ${table}: export=${expected} pg=${actual}`);
+    log(
+      "verify",
+      `${match ? "OK" : "MISMATCH"} ${table}: export=${expected} pg=${actual}${allowExtra ? " (min)" : ""}`,
+    );
   }
   const checks = [
     ["sessions without agency", `select count(*)::int as n from sessions s left join agencies a on a.id = s.agency_id where a.id is null`],
@@ -403,9 +406,9 @@ async function main() {
   await applySchema();
   if (!force && (await alreadyMigrated()) && wipe) {
     log("skip", "data already present — set FORCE_MIGRATE=true to re-import (refusing wipe)");
-    // Still verify against a fresh cloud export counts without wiping.
+    // Allow extra local test rows created after the import.
     const summary = await exportCloud();
-    const ok = await verify(summary);
+    const ok = await verify(summary, { allowExtra: true });
     await pool.end();
     if (!ok) {
       console.error("[migrate] FAILED verification against existing data");
