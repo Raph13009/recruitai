@@ -1,0 +1,11 @@
+# Daily dump + restore self-test + optional age-encrypted upload to Cloudflare R2.
+FROM postgres:16-alpine
+RUN apk add --no-cache bash curl tar gzip age ca-certificates \
+  && curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc \
+  && chmod +x /usr/local/bin/mc \
+  && age --version && mc --version
+WORKDIR /backup
+COPY deploy/docker/backup-loop.sh /backup/backup-loop.sh
+COPY deploy/docker/offsite-sync.sh /backup/offsite-sync.sh
+RUN chmod +x /backup/backup-loop.sh /backup/offsite-sync.sh
+ENTRYPOINT ["/bin/sh", "/backup/backup-loop.sh"]

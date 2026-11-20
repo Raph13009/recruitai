@@ -1,5 +1,5 @@
 #!/bin/sh
-# Daily dumps + one restore self-test per container start (isolated temp DB on same private Postgres).
+# Daily dumps + restore self-test + optional encrypted offsite sync (R2).
 set -eu
 
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
@@ -55,13 +55,18 @@ restore_self_test() {
   echo "[restore-test] temp database dropped"
 }
 
-# Immediate dump + restore verification (proves backups are restorable).
-DUMP_PATH=$(dump_once) || true
-restore_self_test || true
-find /backups -name 'recruitai-*.sql.gz' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+run_cycle() {
+  dump_once || true
+  restore_self_test || true
+  if [ -x /backup/offsite-sync.sh ]; then
+    /backup/offsite-sync.sh || true
+  fi
+  find /backups -name 'recruitai-*.sql.gz' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+}
+
+run_cycle
 
 while true; do
   sleep 86400
-  dump_once || true
-  find /backups -name 'recruitai-*.sql.gz' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
+  run_cycle
 done

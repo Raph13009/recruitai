@@ -28,7 +28,13 @@
 6. Déploiement Compose de test (`recruitai-test.…`), sans bascule du domaine prod.
 
 7. Les recruteurs migrés utilisent « Mot de passe oublié » (aucun export de hash Auth).
+   Vérification auto : service Compose `auth-verify` (`SEND_RESET_EMAIL=true` pour envoyer les vrais liens).
+
+8. Backups : dumps locaux + restore self-test ; offsite R2 chiffré → `deploy/docs/R2-BACKUPS.md`.
+
+9. Audit dépôt public → `deploy/docs/SECURITY-AUDIT.md`.
+   Tests entretien low-credit → `deploy/docs/INTERVIEW-TEST-PLAN.md`.
 
 ## Bascule production
 
-Requiert accord explicite : domaine `recruitai.boostaiconsulting.com`, secrets prod, arrêt progressif Vercel/Supabase.
+Requiert accord explicite : domaine `recruitai.boostaiconsulting.com`, secrets prod (R2 inclus), arrêt progressif Vercel/Supabase.

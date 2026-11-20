@@ -30,3 +30,7 @@ supabase/.temp/
 # Migration dumps (real data — never commit)
 deploy/migration/.secure/
 web/.data/
+*.sql.gz
+*.tar.gz.age
+*.agekey
+.secure/
