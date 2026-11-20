@@ -7,12 +7,7 @@ import { TeamSettings } from "@/components/recruiter/team-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  agencyAdminId,
-  canChangeTeamRoles,
-  canInviteTeam,
-  canManageAgency,
-} from "@/lib/auth/permissions";
+import { canInviteTeam, canManageAgency } from "@/lib/auth/permissions";
 import { requireRecruiter } from "@/lib/auth/dal";
 import { getAgency, listAgencyInvites, listAgencyRecruiters, usingPostgres, usingSupabase } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -101,9 +96,6 @@ async function Settings() {
             members={members}
             invites={invites}
             canInvite={canInviteTeam(recruiter.role)}
-            currentUserId={recruiter.id}
-            adminId={agencyAdminId(agency, members)}
-            canManageRoles={canChangeTeamRoles(recruiter.role)}
           />
         </CardContent>
       </Card>

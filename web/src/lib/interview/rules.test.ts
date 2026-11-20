@@ -44,6 +44,7 @@ describe("JSON export", () => {
     candidate_label: "Karim – à rappeler lundi", candidate_email: null, invited_at: null, is_synthetic: false,
     status: "completed", mode: "audio",
     engine: "gemini", end_reason: "completed", live_starts: 1, memory: emptyMemory(),
+    recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
     created_at: T0, started_at: T0, completed_at: T0,
   };
   const report: Report = {
