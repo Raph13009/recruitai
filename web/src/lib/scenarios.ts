@@ -2,6 +2,7 @@ import { z } from "zod";
 import btp from "@/data/scenarios/btp-second-oeuvre.json";
 import commerce from "@/data/scenarios/commerce-rayon.json";
 import industrie from "@/data/scenarios/industrie-production.json";
+import insee from "@/data/scenarios/insee-presidence.json";
 import logistique from "@/data/scenarios/logistique-urgent.json";
 import restauration from "@/data/scenarios/restauration-evenement.json";
 import { formatFrDate, type JobFacts } from "@/lib/job";
@@ -16,6 +17,9 @@ const scenarioSchema = z.object({
   name: z.string().min(1),
   sector: z.string().min(1),
   agency: z.string().min(1),
+  agency_starter: z.boolean().optional(),
+  interview_mode: z.enum(["interim", "short_leadership"]).optional(),
+  guide_questions: z.array(z.string().min(1)).optional(),
   job_facts: z
     .object({
       position: z.string().min(1),
@@ -31,6 +35,7 @@ const scenarioSchema = z.object({
   introduction: introductionSchema,
   fictional_demo: z.literal(true),
   language: z.string().default("fr-FR"),
+  desired_duration_minutes: z.number().optional(),
 }).passthrough();
 
 export type DemoScenario = z.infer<typeof scenarioSchema>;
@@ -57,9 +62,13 @@ const SCENARIO_IDS: Record<string, { job: string; config: string }> = {
     job: "00000000-0000-4000-8000-000000000043",
     config: "00000000-0000-4000-8000-000000000044",
   },
+  "insee-presidence": {
+    job: "00000000-0000-4000-8000-000000000053",
+    config: "00000000-0000-4000-8000-000000000054",
+  },
 };
 
-const RAW = [logistique, industrie, restauration, btp, commerce] as const;
+const RAW = [logistique, industrie, restauration, btp, commerce, insee] as const;
 
 export const DEMO_SCENARIOS: DemoScenario[] = RAW.map((raw) => scenarioSchema.parse(raw));
 
@@ -87,13 +96,16 @@ export function scenarioToJobFacts(scenario: DemoScenario): JobFacts & {
 } {
   const salary = scenario.job_facts.gross_hourly_salary_eur;
   const salaryFr = salary.toFixed(2).replace(".", ",");
+  const leadership = scenario.interview_mode === "short_leadership";
   return {
     agency: scenario.agency,
     job_title: scenario.job_facts.position,
     location: scenario.job_facts.city,
     contract: scenario.job_facts.contract,
     salary_gross_hourly_eur: salary,
-    salary_note: `${salaryFr} € brut de l'heure`,
+    salary_note: leadership
+      ? "Rémunération statutaire — non discutée dans cet entretien court"
+      : `${salaryFr} € brut de l'heure`,
     working_hours: [...scenario.job_facts.hours],
     tasks: scenario.job_facts.duties.join(", "),
     experience: scenario.job_facts.experience,
@@ -102,6 +114,8 @@ export function scenarioToJobFacts(scenario: DemoScenario): JobFacts & {
     scenario_id: scenario.id,
     first_question: scenario.introduction.first_question,
     job_title_spoken: scenario.introduction.job_title_spoken,
+    interview_mode: scenario.interview_mode ?? "interim",
+    guide_questions: scenario.guide_questions,
   };
 }
 
@@ -116,13 +130,13 @@ export function listScenarioCards() {
     sector: s.sector,
     city: s.job_facts.city,
     position: s.job_facts.position,
-    featured: ["logistique-urgent", "industrie-production", "restauration-evenement"].includes(s.id),
+    featured: ["insee-presidence", "logistique-urgent", "industrie-production"].includes(s.id),
   }));
 }
 
-/** Five demo scenario posts for a new recruiter agency (agency name overridden). */
+/** Demo scenario posts for a new recruiter agency (agency name overridden). Skip internal-only demos. */
 export function starterJobFacts(agencyName: string): JobFacts[] {
-  return DEMO_SCENARIOS.map((scenario) => ({
+  return DEMO_SCENARIOS.filter((scenario) => scenario.agency_starter !== false).map((scenario) => ({
     ...scenarioToJobFacts(scenario),
     agency: agencyName,
   }));

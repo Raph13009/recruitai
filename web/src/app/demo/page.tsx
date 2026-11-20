@@ -24,7 +24,7 @@ export default function DemoPage({ searchParams }: PageProps<"/demo">) {
           Choisir un scénario
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Entretien fictif · ~6 min avec Camille.
+          Entretien fictif avec Camille · intérim (~5 min) ou présidence INSEE (~3 min).
         </p>
         <Suspense fallback={<ScenarioListSkeleton />}>
           <Launcher searchParams={searchParams} />

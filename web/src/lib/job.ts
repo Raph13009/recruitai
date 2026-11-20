@@ -17,6 +17,10 @@ export const jobFactsSchema = z.object({
   scenario_id: z.string().optional(),
   first_question: z.string().optional(),
   job_title_spoken: z.string().optional(),
+  /** interim (default) or short_leadership (executive / internal short interview). */
+  interview_mode: z.enum(["interim", "short_leadership"]).optional(),
+  /** Optional guide questions for short leadership demos (spoken topics, not a rigid script). */
+  guide_questions: z.array(z.string().min(1)).optional(),
 });
 
 /** Raw job facts as stored (same shape as data/demo_job.json). */

@@ -1,0 +1,64 @@
+{
+  "id": "insee-presidence",
+  "name": "Présidence de l’INSEE — entretien interne court",
+  "sector": "Service public / statistique",
+  "business_need": "Échange court et humain pour un poste de direction fictif à l’INSEE",
+  "agency": "INSEE — démo interne",
+  "agency_starter": false,
+  "interview_mode": "short_leadership",
+  "job_facts": {
+    "position": "Président / Présidente de l’INSEE",
+    "city": "Paris",
+    "contract": "Nomination fictive — démonstration interne uniquement",
+    "start_date": "2026-12-01",
+    "gross_hourly_salary_eur": 1,
+    "hours": [
+      "Temps plein — responsabilités de direction"
+    ],
+    "duties": [
+      "Diriger l’Institut national de la statistique et des études économiques",
+      "Garantir l’indépendance et la qualité de la statistique publique",
+      "Piloter les priorités stratégiques et la communication des chiffres",
+      "Dialoguer avec les autorités, les équipes et le public"
+    ],
+    "experience": "Expérience de direction, de statistique publique ou d’institutions proches appréciée ; démonstration fictive",
+    "bonuses": null,
+    "salary_evolution": null
+  },
+  "introduction": {
+    "job_title_spoken": "président de l’INSEE",
+    "first_question": "Qu’est-ce qui vous attire, concrètement, dans la direction de l’INSEE ?"
+  },
+  "guide_questions": [
+    "Qu’est-ce qui vous attire, concrètement, dans la direction de l’INSEE ?",
+    "Dans votre parcours, qu’est-ce qui vous a préparé à défendre l’indépendance et la qualité des chiffres publics ?",
+    "Si vous preniez vos fonctions demain, quelle serait votre première priorité — et pourquoi celle-là ?"
+  ],
+  "topics": [
+    "Motivation pour diriger l’INSEE",
+    "Indépendance et crédibilité de la statistique publique",
+    "Priorité concrète en début de mandat",
+    "Rebond humain sur ce que la personne vient de dire"
+  ],
+  "demo_tests": [
+    {
+      "input": "J’ai surtout fait du privé, mais j’aime les données.",
+      "expected": "Rebondir sur le privé/données, explorer le lien avec la statistique publique sans juger"
+    },
+    {
+      "input": "L’indépendance face au politique, c’est central pour moi.",
+      "expected": "Rebondir sur un exemple concret d’indépendance, puis avancer vers la priorité"
+    }
+  ],
+  "fictional_demo": true,
+  "language": "fr-FR",
+  "desired_duration_minutes": 3,
+  "guide": {
+    "opening": "Très court : «Bonjour, je suis Camille, votre assistante de recrutement IA. Nous allons échanger pour le poste de président de l’INSEE. Qu’est-ce qui vous attire, concrètement, dans la direction de l’INSEE ?»",
+    "sequence": "Entretien très court (~3 min). 2 à 3 questions max. Toujours rebondir sur ce qui vient d’être dit avant d’avancer. Pas d’horaires intérim, pas de salaire, pas de disponibilité type mission.",
+    "acknowledgments": "Une phrase humaine et naturelle, puis une seule question.",
+    "interruption": "Répondre d’abord, attendre, puis reprendre.",
+    "unknown": "Dire que ce point sera confirmé par un humain ; ne rien inventer sur l’INSEE.",
+    "closure": "Après 2–3 échanges utiles ou quand la personne n’a plus rien à ajouter."
+  }
+}
