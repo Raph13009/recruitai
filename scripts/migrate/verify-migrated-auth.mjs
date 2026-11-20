@@ -12,7 +12,14 @@
  *   AUTH_VERIFY_LIMIT=3 (default)
  */
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import pg from "pg";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "../..");
+const require = createRequire(resolve(root, "web/package.json"));
+const { Pool } = require("pg");
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -25,7 +32,7 @@ const SEND = process.env.SEND_RESET_EMAIL === "true";
 const SSL = process.env.DATABASE_SSL === "true";
 const APP = (process.env.PUBLIC_APP_URL || "https://recruitai-test.boostaiconsulting.com").replace(/\/$/, "");
 
-const pool = new pg.Pool({ connectionString: url, ssl: SSL ? { rejectUnauthorized: false } : false });
+const pool = new Pool({ connectionString: url, ssl: SSL ? { rejectUnauthorized: false } : false });
 
 function maskEmail(email) {
   const [u, d] = String(email).split("@");

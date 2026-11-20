@@ -16,7 +16,6 @@ dump_once() {
   echo "[backup] dumping to ${OUT}"
   if pg_dump -h "$HOST" -U "$USER" -d "$DB" --no-owner --no-acl | gzip -c >"$OUT"; then
     echo "[backup] ok $(wc -c <"$OUT") bytes"
-    echo "$OUT"
   else
     echo "[backup] FAILED" >&2
     rm -f "$OUT"
@@ -58,8 +57,8 @@ restore_self_test() {
 run_cycle() {
   dump_once || true
   restore_self_test || true
-  if [ -x /backup/offsite-sync.sh ]; then
-    /backup/offsite-sync.sh || true
+  if [ -f /backup/offsite-sync.sh ]; then
+    /bin/sh /backup/offsite-sync.sh || true
   fi
   find /backups -name 'recruitai-*.sql.gz' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
 }
