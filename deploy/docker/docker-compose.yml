@@ -105,6 +105,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-recruitai}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      # Bump to force container recreate when the backup script changes.
+      BACKUP_SCRIPT_REV: "2"
     volumes:
       - recruitai_backups:/backups
       - ./backup-loop.sh:/backup-loop.sh:ro
