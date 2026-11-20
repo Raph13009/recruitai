@@ -383,9 +383,38 @@ async function verify(summary) {
   return ok;
 }
 
+async function alreadyMigrated() {
+  try {
+    const { rows } = await pool.query(
+      `select
+         (select count(*)::int from agencies) as agencies,
+         (select count(*)::int from recruiters) as recruiters,
+         (select count(*)::int from sessions) as sessions`,
+    );
+    const r = rows[0];
+    return r.agencies > 0 && r.recruiters > 0 && r.sessions > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
-  log("start", wipe ? "wipe+migrate" : "migrate");
+  const force = process.env.FORCE_MIGRATE === "true";
   await applySchema();
+  if (!force && (await alreadyMigrated()) && wipe) {
+    log("skip", "data already present — set FORCE_MIGRATE=true to re-import (refusing wipe)");
+    // Still verify against a fresh cloud export counts without wiping.
+    const summary = await exportCloud();
+    const ok = await verify(summary);
+    await pool.end();
+    if (!ok) {
+      console.error("[migrate] FAILED verification against existing data");
+      process.exit(2);
+    }
+    log("done", "existing migration verified (no wipe)");
+    return;
+  }
+  log("start", wipe ? "wipe+migrate" : "migrate");
   const summary = await exportCloud();
   await importPrivate();
   const ok = await verify(summary);
