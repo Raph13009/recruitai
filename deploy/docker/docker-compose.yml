@@ -93,9 +93,9 @@ services:
       start_period: 60s
 
   backup:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile.backup
+    # Local dumps + restore self-test (postgres image). Offsite R2 uses Dockerfile.backup
+    # when R2_* + AGE_RECIPIENT are set — see deploy/docs/R2-BACKUPS.md.
+    image: postgres:16-alpine
     restart: unless-stopped
     depends_on:
       db:
@@ -109,7 +109,6 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       OFFSITE_KEEP_DAYS: ${OFFSITE_KEEP_DAYS:-30}
-      # Cloudflare R2 (S3 API). Leave empty → local dumps + restore self-test only.
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_BUCKET: ${R2_BUCKET:-}
       AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
@@ -118,13 +117,15 @@ services:
       BACKUP_ALERT_TO: ${BACKUP_ALERT_TO:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-RecruitAI <onboarding@resend.dev>}
-      # Bump to force container recreate when the backup script changes.
-      BACKUP_SCRIPT_REV: "3"
+      BACKUP_SCRIPT_REV: "4"
     volumes:
       - recruitai_backups:/backups
       - recruitai_branding:/data
+      - ./backup-loop.sh:/backup/backup-loop.sh:ro
+      - ./offsite-sync.sh:/backup/offsite-sync.sh:ro
     networks:
       - recruitai_internal
+    entrypoint: ["/bin/sh", "/backup/backup-loop.sh"]
 
   # One-shot: prove migrated accounts can reset + login (no emails unless SEND_RESET_EMAIL=true).
   auth-verify:

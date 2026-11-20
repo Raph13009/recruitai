@@ -39,7 +39,11 @@ BACKUP_ALERT_TO=vous@votre-domaine.fr
 
 `RESEND_API_KEY` / `RESEND_FROM` déjà présents sont réutilisés pour l’alerte d’échec.
 
-6. Redeploy / recreate le service `backup` après ajout des variables.
+6. Dans `deploy/docker/docker-compose.yml`, basculer le service `backup` sur le build
+   `dockerfile: deploy/docker/Dockerfile.backup` (image avec `age` + `aws-cli`).
+   Sans cela, l’offsite reste en no-op (dumps locaux + restore self-test uniquement).
+
+7. Redeploy / recreate le service `backup` après ajout des variables.
 
 ## Restauration (test manuel)
 

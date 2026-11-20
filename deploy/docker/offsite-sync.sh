@@ -23,10 +23,6 @@ alert_fail() {
       "$ALERT_TO" \
       "[RecruitAI] Backup offsite FAILED" \
       "$MSG")
-    wget -qO- --header="Authorization: Bearer ${RESEND_API_KEY}" \
-      --header="Content-Type: application/json" \
-      --post-data="$BODY" \
-      https://api.resend.com/emails >/dev/null 2>&1 || \
     curl -fsS -X POST https://api.resend.com/emails \
       -H "Authorization: Bearer ${RESEND_API_KEY}" \
       -H "Content-Type: application/json" \
@@ -40,7 +36,7 @@ if ! need_r2; then
 fi
 
 command -v age >/dev/null || { alert_fail "age binary missing"; exit 1; }
-command -v mc >/dev/null || { alert_fail "mc binary missing"; exit 1; }
+command -v aws >/dev/null || { alert_fail "aws cli missing"; exit 1; }
 
 mkdir -p "$STAGE_DIR"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
@@ -59,11 +55,10 @@ echo "[offsite] encrypting with age"
 age -r "$AGE_RECIPIENT" -o "$ENC" "$ARCHIVE_GZ"
 rm -f "$ARCHIVE_GZ"
 
-mc alias set recruitai-r2 "$R2_ENDPOINT" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" >/dev/null
-
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-auto}"
 KEY="recruitai/$(date -u +%Y/%m)/recruitai-${STAMP}.tar.gz.age"
-echo "[offsite] uploading ${R2_BUCKET}/${KEY}"
-if ! mc cp "$ENC" "recruitai-r2/${R2_BUCKET}/${KEY}"; then
+echo "[offsite] uploading s3://${R2_BUCKET}/${KEY}"
+if ! aws s3 cp "$ENC" "s3://${R2_BUCKET}/${KEY}" --endpoint-url "$R2_ENDPOINT"; then
   alert_fail "upload failed for ${KEY}"
   rm -f "$ENC"
   exit 1
@@ -71,9 +66,20 @@ fi
 rm -f "$ENC"
 echo "[offsite] ok ${KEY}"
 
-# Retention: remove remote objects older than OFFSITE_KEEP_DAYS (best-effort).
-echo "[offsite] retention keep ${OFFSITE_KEEP_DAYS}d"
-mc rm --recursive --force --older-than "${OFFSITE_KEEP_DAYS}d" "recruitai-r2/${R2_BUCKET}/recruitai/" 2>/dev/null || true
+# Best-effort remote retention via list + delete older keys.
+CUTOFF_EPOCH=$(date -u -d "-${OFFSITE_KEEP_DAYS} days" +%s 2>/dev/null || date -u -v-"${OFFSITE_KEEP_DAYS}"d +%s 2>/dev/null || echo "")
+if [ -n "$CUTOFF_EPOCH" ]; then
+  echo "[offsite] retention keep ${OFFSITE_KEEP_DAYS}d"
+  aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix "recruitai/" --endpoint-url "$R2_ENDPOINT" \
+    --query 'Contents[].[Key,LastModified]' --output text 2>/dev/null \
+    | while read -r key modified; do
+        [ -z "$key" ] || [ "$key" = "None" ] && continue
+        MOD_EPOCH=$(date -u -d "$modified" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%S" "${modified%%.*}" +%s 2>/dev/null || echo "")
+        if [ -n "$MOD_EPOCH" ] && [ "$MOD_EPOCH" -lt "$CUTOFF_EPOCH" ]; then
+          aws s3 rm "s3://${R2_BUCKET}/${key}" --endpoint-url "$R2_ENDPOINT" || true
+        fi
+      done
+fi
 
 find "$BACKUPS_DIR" -name 'recruitai-*.sql.gz' -type f -mtime +"$KEEP_DAYS" -delete 2>/dev/null || true
 echo "[offsite] done"
