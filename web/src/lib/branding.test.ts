@@ -33,6 +33,7 @@ describe("branding", () => {
         avatar_name: null,
         avatar_preview_url: null,
       },
+      created_by: null,
       created_at: "2026-01-01T00:00:00.000Z",
       branding: null,
     });

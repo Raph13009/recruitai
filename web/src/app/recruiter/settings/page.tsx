@@ -7,9 +7,14 @@ import { TeamSettings } from "@/components/recruiter/team-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { canInviteTeam, canManageAgency } from "@/lib/auth/permissions";
+import {
+  agencyAdminId,
+  canChangeTeamRoles,
+  canInviteTeam,
+  canManageAgency,
+} from "@/lib/auth/permissions";
 import { requireRecruiter } from "@/lib/auth/dal";
-import { getAgency, listAgencyInvites, listAgencyRecruiters, usingSupabase } from "@/lib/db";
+import { getAgency, listAgencyInvites, listAgencyRecruiters, usingPostgres, usingSupabase } from "@/lib/db";
 import { env } from "@/lib/env";
 
 export const metadata = { title: "Réglages" };
@@ -42,6 +47,7 @@ async function Settings() {
   const avatarKey = Boolean(env.liveAvatarApiKey());
   const sandbox = env.liveAvatarSandbox();
   const avatarService = !avatarKey ? "off" : sandbox ? "sandbox" : "live";
+  const postgres = usingPostgres();
   const supabase = usingSupabase();
 
   const services = [
@@ -68,13 +74,15 @@ async function Settings() {
     {
       icon: DatabaseIcon,
       name: "Données",
-      detail: supabase
-        ? "Supabase (Postgres) : comptes, postes et entretiens partagés par tous les serveurs."
-        : env.persistMockDb()
-          ? "Base de démonstration locale (fichier web/.data/store.json). Passez à Supabase avec USE_MOCK_DB=false."
-          : "Base de démonstration en mémoire : elle repart de zéro à chaque redémarrage.",
-      status: supabase ? "Supabase" : "Démonstration",
-      ok: supabase,
+      detail: postgres
+        ? "PostgreSQL privé (Dokploy) : authentification et données hébergées sur votre serveur."
+        : supabase
+          ? "Supabase Cloud (legacy) : encore actif pendant la migration."
+          : env.persistMockDb()
+            ? "Base de démonstration locale (fichier web/.data/store.json)."
+            : "Base de démonstration en mémoire : elle repart de zéro à chaque redémarrage.",
+      status: postgres ? "PostgreSQL privé" : supabase ? "Supabase" : "Démonstration",
+      ok: postgres || supabase,
     },
   ];
 
@@ -84,11 +92,19 @@ async function Settings() {
         <CardHeader>
           <CardTitle className="text-lg">Équipe</CardTitle>
           <CardDescription>
-            Compte owner : tout gérer. Compte member : envoyer des entretiens sur les postes existants.
+            Owner : tout gérer. Member : envoyer des entretiens. Le créateur de l’espace (admin)
+            peut changer le rôle de tout le monde.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <TeamSettings members={members} invites={invites} canInvite={canInviteTeam(recruiter.role)} />
+          <TeamSettings
+            members={members}
+            invites={invites}
+            canInvite={canInviteTeam(recruiter.role)}
+            currentUserId={recruiter.id}
+            adminId={agencyAdminId(agency, members)}
+            canManageRoles={canChangeTeamRoles(recruiter.role)}
+          />
         </CardContent>
       </Card>
 

@@ -5,11 +5,28 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { text, type FormState } from "@/app/actions/form-state";
 import { endSession, startSession } from "@/lib/auth/session";
-import { acceptAgencyInvite, authenticate, createAgencyWithRecruiter, demoRecruiter } from "@/lib/db";
+import {
+  acceptAgencyInvite,
+  authenticate,
+  consumePasswordResetToken,
+  createAgencyWithRecruiter,
+  createPasswordResetToken,
+  demoRecruiter,
+  usingPostgres,
+} from "@/lib/db";
+import { sendPasswordResetEmail } from "@/lib/email/password-reset";
 import { ConfigError, env } from "@/lib/env";
 import { clientAddress, rateLimit } from "@/lib/rate-limit";
 
 const TEN_MINUTES = 10 * 60_000;
+
+function appOrigin(headerList: Headers): string {
+  const configured = env.publicAppUrl();
+  if (configured) return configured.replace(/\/$/, "");
+  const host = headerList.get("x-forwarded-host") || headerList.get("host");
+  const proto = headerList.get("x-forwarded-proto") || "http";
+  return host ? `${proto}://${host}` : "http://localhost:3000";
+}
 
 /** Opens the session cookie. Returns a message instead of throwing when the server is misconfigured. */
 async function open(recruiterId: string): Promise<string | null> {
@@ -124,4 +141,66 @@ export async function acceptInvite(_previous: FormState, formData: FormData): Pr
   const problem = await open(recruiter.id);
   if (problem) return { error: problem, values };
   redirect("/recruiter?bienvenue=1");
+}
+
+const forgotSchema = z.object({ email: z.email() });
+
+/** Always returns a generic success message (no account enumeration). */
+export async function requestPasswordReset(_previous: FormState, formData: FormData): Promise<FormState> {
+  const values = { email: text(formData, "email") };
+  if (!rateLimit(`forgot:${clientAddress(await headers())}`, 5, TEN_MINUTES)) {
+    return { error: "Trop de demandes. Réessayez dans quelques minutes.", values };
+  }
+  if (!usingPostgres()) {
+    return {
+      error: "La réinitialisation de mot de passe est disponible uniquement sur l’infrastructure privée.",
+      values,
+    };
+  }
+  const parsed = forgotSchema.safeParse(values);
+  if (!parsed.success) return { error: "Indiquez une adresse e-mail valide.", values };
+
+  const headerList = await headers();
+  const raw = await createPasswordResetToken(parsed.data.email);
+  if (raw) {
+    await sendPasswordResetEmail({
+      to: parsed.data.email.trim().toLowerCase(),
+      resetUrl: `${appOrigin(headerList)}/reset-password?token=${encodeURIComponent(raw)}`,
+    });
+  }
+  return {
+    ok: true,
+    message:
+      "Si un compte existe pour cet e-mail, un lien de réinitialisation vient d’être envoyé (valable 1 h).",
+    values,
+  };
+}
+
+const resetSchema = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(8, "Au moins 8 caractères.").max(200),
+});
+
+export async function resetPassword(_previous: FormState, formData: FormData): Promise<FormState> {
+  const values = { token: text(formData, "token") };
+  if (!rateLimit(`reset:${clientAddress(await headers())}`, 8, TEN_MINUTES)) {
+    return { error: "Trop de tentatives. Réessayez dans quelques minutes.", values };
+  }
+  if (!usingPostgres()) {
+    return { error: "Réinitialisation indisponible hors base privée.", values };
+  }
+  const parsed = resetSchema.safeParse({
+    token: values.token,
+    password: String(formData.get("password") ?? ""),
+  });
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) fieldErrors[String(issue.path[0])] ??= issue.message;
+    return { fieldErrors, values };
+  }
+  const ok = await consumePasswordResetToken(parsed.data.token, parsed.data.password);
+  if (!ok) {
+    return { error: "Ce lien est invalide ou a expiré. Demandez-en un nouveau.", values };
+  }
+  redirect("/login?reset=1");
 }

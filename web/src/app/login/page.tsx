@@ -7,18 +7,27 @@ import { env } from "@/lib/env";
 
 export const metadata = { title: "Connexion", robots: { index: false } };
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>;
+}) {
   return (
     <AuthShell>
       <Suspense fallback={<AuthFormSkeleton />}>
-        <Gate />
+        <Gate searchParams={searchParams} />
       </Suspense>
     </AuthShell>
   );
 }
 
 /** Already signed in: straight to the recruiter space. Otherwise, the form. */
-async function Gate() {
+async function Gate({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>;
+}) {
   if (await getCurrentRecruiter()) redirect("/recruiter");
-  return <LoginForm demoEnabled={env.demoLogin()} />;
+  const { reset } = await searchParams;
+  return <LoginForm demoEnabled={env.demoLogin()} resetDone={reset === "1"} />;
 }

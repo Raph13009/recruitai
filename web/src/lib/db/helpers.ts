@@ -46,12 +46,13 @@ export function withInterviewer<
 
 /** Agencies read from a store always carry interviewer settings and branding (older rows get defaults). */
 export function normalizeAgency(
-  agency: Omit<Agency, "interviewer" | "branding"> & {
+  agency: Omit<Agency, "interviewer" | "branding" | "created_by"> & {
     interviewer?: InterviewerSettings | null;
     branding?: AgencyBranding | null;
+    created_by?: string | null;
   },
 ): Agency {
-  return withBranding(withInterviewer(agency));
+  return withBranding(withInterviewer({ ...agency, created_by: agency.created_by ?? null }));
 }
 
 /** Sessions written before the MVP columns existed get neutral values. */
@@ -63,8 +64,20 @@ export function normalizeSession(row: InterviewSession): InterviewSession {
     engine: row.engine ?? null,
     end_reason: row.end_reason ?? null,
     live_starts: row.live_starts ?? 0,
+    recruiter_status: row.recruiter_status ?? "to_review",
+    recruiter_rating: row.recruiter_rating ?? null,
+    is_favorite: row.is_favorite ?? false,
+    next_action: row.next_action ?? null,
   };
 }
+
+/** Defaults for new interview rows (recruiter review fields). */
+export const SESSION_REVIEW_DEFAULTS = {
+  recruiter_status: "to_review" as const,
+  recruiter_rating: null,
+  is_favorite: false,
+  next_action: null,
+};
 
 export function durationSeconds(session: Pick<InterviewSession, "started_at" | "completed_at">): number | null {
   if (!session.started_at || !session.completed_at) return null;

@@ -45,12 +45,17 @@ export const env = {
   },
 
   // --- Data ---
-  /** Default true. Set USE_MOCK_DB=false with SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to use Postgres. */
+  /** Default true. Set USE_MOCK_DB=false with DATABASE_URL (private PG) or Supabase credentials. */
   useMockDb: () => flag("USE_MOCK_DB", true),
+  /** Private PostgreSQL (Option A). Preferred over Supabase when both are set. */
+  databaseUrl: () => read("DATABASE_URL"),
+  databaseSsl: () => flag("DATABASE_SSL", false),
   supabaseUrl: () => read("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
   supabaseServiceRoleKey: () => read("SUPABASE_SERVICE_ROLE_KEY"),
   /** Keep the mock database in web/.data/store.json between restarts (never on serverless hosts). */
   persistMockDb: () => !process.env.VERCEL && flag("MOCK_DB_PERSIST", true),
+  /** Public app origin for absolute branding URLs (e.g. https://recruitai.boostaiconsulting.com). */
+  publicAppUrl: () => read("PUBLIC_APP_URL", "NEXT_PUBLIC_APP_URL"),
 
   // --- Accounts ---
   sessionSecret: () => read("SESSION_SECRET"),

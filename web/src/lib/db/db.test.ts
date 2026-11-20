@@ -17,6 +17,7 @@ function session(patch: Partial<InterviewSession> = {}): InterviewSession {
     id: "s1", agency_id: "a1", job_id: "j1", interview_config_id: "c1", token: "tok-1",
     candidate_label: "Candidat test", candidate_email: null, invited_at: null, is_synthetic: true,
     status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
+    recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
     created_at: T0, started_at: null, completed_at: null,
     ...patch,
   };
@@ -105,20 +106,24 @@ describe("shared store helpers", () => {
       engine: null,
       end_reason: null,
       live_starts: 0,
+      recruiter_status: "to_review",
+      recruiter_rating: null,
+      is_favorite: false,
+      next_action: null,
     });
-    const agency = withInterviewer({ id: "a1", name: "Agence", created_at: T0, interviewer: null });
+    const agency = withInterviewer({ id: "a1", name: "Agence", created_by: null, created_at: T0, interviewer: null });
     expect(agency.interviewer.persona_name).toBeTruthy();
     expect(agency.interviewer.video_enabled).toBe(true);
     const branded = withBranding({ ...agency, branding: null });
     expect(branded.branding).toEqual({ logo_url: null, banner_url: null, accent_color: "#0f6b5c" });
-    const normalized = normalizeAgency({ id: "a1", name: "Agence", created_at: T0, interviewer: null, branding: null });
+    const normalized = normalizeAgency({ id: "a1", name: "Agence", created_by: null, created_at: T0, interviewer: null, branding: null });
     expect(normalized.interviewer.persona_name).toBeTruthy();
     expect(normalized.branding.accent_color).toBe("#0f6b5c");
   });
 
   it("builds the candidate payload with the agency's interviewer name", () => {
     const j = job();
-    const agency: Agency = withBranding(withInterviewer({ id: "a1", name: "Agence", created_at: T0 }));
+    const agency: Agency = withBranding(withInterviewer({ id: "a1", name: "Agence", created_by: null, created_at: T0 }));
     agency.interviewer.persona_name = "Inès";
     agency.branding = { logo_url: "https://cdn.example/logo.png", banner_url: null, accent_color: "#112233" };
     const config: InterviewConfig = {

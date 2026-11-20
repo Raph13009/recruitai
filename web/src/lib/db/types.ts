@@ -2,6 +2,9 @@
 import type { JobFacts } from "@/lib/job";
 import type { CandidateMemory } from "@/lib/interview/memory";
 import type { InterviewReport } from "@/lib/interview/report";
+import type { RecruiterSessionStatus, SessionNextAction } from "@/lib/db/session-review";
+
+export type { RecruiterSessionStatus, SessionNextAction };
 
 export type Uuid = string;
 export type Timestamp = string; // ISO 8601
@@ -32,11 +35,15 @@ export interface Agency {
   name: string;
   interviewer: InterviewerSettings; // jsonb
   branding: AgencyBranding;
+  /** Workspace creator — admin who can change every teammate's role. */
+  created_by: Uuid | null;
   created_at: Timestamp;
 }
 
 /** Owner runs the agency; member only sends interview links. */
 export type RecruiterRole = "owner" | "member";
+
+export type UpdateRecruiterRoleResult = "ok" | "forbidden" | "not_found";
 
 export interface Recruiter {
   id: Uuid; // = auth.users.id in Postgres (Supabase Auth holds the password)
@@ -109,6 +116,13 @@ export interface InterviewSession {
   /** How many times the candidate started (or restarted) the live call. Caps credit usage. */
   live_starts: number;
   memory: CandidateMemory; // jsonb
+  /** Manual recruiter workflow status — never set by the AI. */
+  recruiter_status: RecruiterSessionStatus;
+  /** Manual 1–5 rating assigned by a recruiter. null = not rated. Never set by the AI. */
+  recruiter_rating: number | null;
+  is_favorite: boolean;
+  /** Manual next step chosen by a recruiter. */
+  next_action: SessionNextAction | null;
   created_at: Timestamp;
   started_at: Timestamp | null;
   completed_at: Timestamp | null;

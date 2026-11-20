@@ -1,0 +1,28 @@
+# Isolated Postgres-only stack for Dokploy smoke test.
+# No public ports, no dokploy-network — zero impact on shared Traefik / other apps.
+# Schema is applied later via scripts against DATABASE_URL (see deploy/docs/MIGRATION.md).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-recruitai_test}
+      POSTGRES_USER: ${POSTGRES_USER:-recruitai_test}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    volumes:
+      - recruitai_test_pg_data:/var/lib/postgresql/data
+    networks:
+      - recruitai_test_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+networks:
+  recruitai_test_internal:
+    driver: bridge
+
+volumes:
+  recruitai_test_pg_data:

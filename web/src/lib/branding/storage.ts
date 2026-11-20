@@ -73,8 +73,8 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = Object.fromEntries(
   Object.entries(EXT_BY_TYPE).map(([type, ext]) => [ext, type]),
 );
 
-/** Mock mode only: reads a stored image back for the `/api/branding` route. */
-export async function readMockAsset(
+/** Reads a branding image from private FS (mock or private Postgres). Supabase uses public URLs. */
+export async function readPrivateAsset(
   agencyId: string,
   kind: BrandingKind,
 ): Promise<{ data: Buffer; contentType: string } | null> {

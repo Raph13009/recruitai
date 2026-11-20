@@ -8,6 +8,8 @@ export interface FormState {
   values?: Record<string, string>;
   /** Set when the action succeeded without navigating away. */
   ok?: boolean;
+  /** Non-error notice after a successful action that stays on the page. */
+  message?: string;
 }
 
 export const EMPTY_FORM: FormState = {};

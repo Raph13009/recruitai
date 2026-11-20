@@ -26,3 +26,7 @@ data/*
 tools/whisper.cpp/
 supabase/.temp/
 .worktrees/
+
+# Migration dumps (real data — never commit)
+deploy/migration/.secure/
+web/.data/

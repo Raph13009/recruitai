@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
+export function LoginForm({ demoEnabled, resetDone = false }: { demoEnabled: boolean; resetDone?: boolean }) {
   const [state, action, pending] = useActionState(login, EMPTY_FORM);
 
   return (
@@ -20,6 +20,11 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
             <h1 className="headline text-4xl">Connexion</h1>
             <p className="text-balance text-muted-foreground">Accédez à l’espace recruteur de votre agence.</p>
           </div>
+          {resetDone && (
+            <p role="status" className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
+              Mot de passe mis à jour. Vous pouvez vous connecter.
+            </p>
+          )}
           <Field>
             <FieldLabel htmlFor="email">E-mail</FieldLabel>
             <Input
@@ -33,7 +38,12 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="password">Mot de passe</FieldLabel>
+            <div className="flex items-center justify-between gap-2">
+              <FieldLabel htmlFor="password">Mot de passe</FieldLabel>
+              <Link href="/forgot-password" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                Oublié ?
+              </Link>
+            </div>
             <Input id="password" name="password" type="password" autoComplete="current-password" required />
           </Field>
           {state.error && (

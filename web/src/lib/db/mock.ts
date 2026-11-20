@@ -12,13 +12,15 @@ import { dataFile } from "@/lib/data-dir";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { defaultBranding } from "@/lib/branding";
 import {
-  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, type SessionContext,
+  DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, normalizeSession,
+  type SessionContext,
 } from "@/lib/db/helpers";
 import { readDurableBag, writeDurableBag } from "@/lib/db/persist";
-import { withRole } from "@/lib/auth/permissions";
+import { agencyAdminId, canSetRecruiterRole, withRole } from "@/lib/auth/permissions";
 import type {
   Agency, AgencyBranding, AgencyInvite, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode,
-  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
+  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, RecruiterRole, Report, TranscriptRole,
+  TranscriptTurn, UpdateRecruiterRoleResult,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/lib/interview/memory";
@@ -130,7 +132,7 @@ function db(): Store {
 /** Stable ids (same as the Supabase seed) so a demo interview resolves on every server instance. */
 function seed(): Store {
   const t = now();
-  const agency: Agency = { id: DEMO_IDS.agency, name: "Interim Express", interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
+  const agency: Agency = { id: DEMO_IDS.agency, name: "Interim Express", interviewer: defaultInterviewer(), branding: defaultBranding(), created_by: DEMO_IDS.recruiter, created_at: t };
   const recruiter: StoredRecruiter = {
     id: DEMO_IDS.recruiter,
     agency_id: agency.id,
@@ -231,6 +233,7 @@ function seedSyntheticCandidates(store: Store, job: Job, config: InterviewConfig
       id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
       token: person.token, candidate_label: person.label, candidate_email: null, invited_at: null, is_synthetic: true,
       status: "completed", mode: "avatar", engine: "gemini", end_reason: "completed", live_starts: 1, memory,
+      recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
       created_at: minutesAgo(person.startedAgo + 30), started_at: started, completed_at: completed,
     };
     store.sessions.push(session);
@@ -254,7 +257,9 @@ function seedSyntheticCandidates(store: Store, job: Job, config: InterviewConfig
     id: randomUUID(), agency_id: job.agency_id, job_id: job.id, interview_config_id: config.id,
     token: newToken(), candidate_label: "Candidat C-104 (synthétique)", candidate_email: null, invited_at: null,
     is_synthetic: true, status: "created", mode: null, engine: null, end_reason: null, live_starts: 0,
-    memory: emptyMemory(), created_at: minutesAgo(20), started_at: null, completed_at: null,
+    memory: emptyMemory(),
+    recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
+    created_at: minutesAgo(20), started_at: null, completed_at: null,
   });
 }
 
@@ -298,9 +303,17 @@ export async function createAgencyWithRecruiter(input: {
   const store = db();
   if (store.recruiters.some((r) => sameEmail(r.email, input.email))) return null;
   const t = now();
-  const agency: Agency = { id: randomUUID(), name: input.agencyName.trim(), interviewer: defaultInterviewer(), branding: defaultBranding(), created_at: t };
-  const recruiter: StoredRecruiter = {
+  const recruiterId = randomUUID();
+  const agency: Agency = {
     id: randomUUID(),
+    name: input.agencyName.trim(),
+    interviewer: defaultInterviewer(),
+    branding: defaultBranding(),
+    created_by: recruiterId,
+    created_at: t,
+  };
+  const recruiter: StoredRecruiter = {
+    id: recruiterId,
     agency_id: agency.id,
     full_name: input.fullName.trim(),
     email: input.email.trim().toLowerCase(),
@@ -313,6 +326,37 @@ export async function createAgencyWithRecruiter(input: {
   save();
   await seedStarterJobs(agency.id, agency.name);
   return publicRecruiter(recruiter);
+}
+
+/** Owner (or workspace admin) changes a teammate's role. */
+export async function updateAgencyRecruiterRole(input: {
+  agencyId: string;
+  actorId: string;
+  targetId: string;
+  role: RecruiterRole;
+}): Promise<UpdateRecruiterRoleResult> {
+  const store = db();
+  const agency = store.agencies.find((a) => a.id === input.agencyId);
+  if (!agency) return "not_found";
+  const members = store.recruiters.filter((r) => r.agency_id === input.agencyId);
+  const actor = members.find((r) => r.id === input.actorId);
+  const target = members.find((r) => r.id === input.targetId);
+  if (!actor || !target) return "not_found";
+
+  const allowed = canSetRecruiterRole({
+    actorId: actor.id,
+    actorRole: withRole(actor.role),
+    targetId: target.id,
+    targetRole: withRole(target.role),
+    newRole: input.role,
+    adminId: agencyAdminId(agency, members),
+    ownerCount: members.filter((r) => withRole(r.role) === "owner").length,
+  });
+  if (!allowed) return "forbidden";
+
+  target.role = input.role;
+  save();
+  return "ok";
 }
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
@@ -571,6 +615,7 @@ function insertSession(
     token: newToken(), candidate_label: label, candidate_email: email,
     invited_at: input.invited ? t : null, is_synthetic: false,
     status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
+    recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
     created_at: t, started_at: null, completed_at: null,
   };
   store.sessions.push(session);
@@ -606,12 +651,38 @@ export async function listSessions(agencyId: string, filter: { jobId?: string } 
   return clone(
     db().sessions
       .filter((s) => s.agency_id === agencyId && (!filter.jobId || s.job_id === filter.jobId))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map(normalizeSession),
   );
 }
 
 export async function getSession(agencyId: string, id: string): Promise<InterviewSession | null> {
-  return clone(db().sessions.find((s) => s.id === id && s.agency_id === agencyId) ?? null);
+  const row = db().sessions.find((s) => s.id === id && s.agency_id === agencyId);
+  return row ? clone(normalizeSession(row)) : null;
+}
+
+export type SessionReviewPatch = {
+  recruiter_status?: InterviewSession["recruiter_status"];
+  recruiter_rating?: number | null;
+  is_favorite?: boolean;
+  next_action?: InterviewSession["next_action"];
+};
+
+/** Updates recruiter review fields for an interview in this agency. */
+export async function updateSessionReview(
+  agencyId: string,
+  id: string,
+  patch: SessionReviewPatch,
+): Promise<InterviewSession | null> {
+  const store = db();
+  const session = store.sessions.find((s) => s.id === id && s.agency_id === agencyId);
+  if (!session) return null;
+  if (patch.recruiter_status !== undefined) session.recruiter_status = patch.recruiter_status;
+  if (patch.recruiter_rating !== undefined) session.recruiter_rating = patch.recruiter_rating;
+  if (patch.is_favorite !== undefined) session.is_favorite = patch.is_favorite;
+  if (patch.next_action !== undefined) session.next_action = patch.next_action;
+  save();
+  return clone(session);
 }
 
 /** Deletes an interview with its transcript and report (the candidate's data is gone for good). */
@@ -682,7 +753,7 @@ async function liveSession(token: string): Promise<InterviewSession | null> {
 
 export async function getSessionByToken(token: string): Promise<InterviewSession | null> {
   const session = await liveSession(token);
-  return session ? clone(session) : null;
+  return session ? clone(normalizeSession(session)) : null;
 }
 
 /** Everything the candidate flow needs about a session, read in one go. */

@@ -7,14 +7,15 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { defaultBranding } from "@/lib/branding";
 import { supabaseAdmin, supabaseAuthClient } from "@/lib/db/client";
-import { withRole } from "@/lib/auth/permissions";
+import { agencyAdminId, canSetRecruiterRole, withRole } from "@/lib/auth/permissions";
 import {
   DEMO_ACCOUNT, DEMO_IDS, defaultInterviewer, durationSeconds, jobBrief, normalizeAgency, normalizeSession,
   type SessionContext,
 } from "@/lib/db/helpers";
 import type {
   Agency, AgencyBranding, AgencyInvite, EndReason, InterviewConfig, InterviewEngineKind, InterviewMode,
-  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, Report, TranscriptRole, TranscriptTurn,
+  InterviewSession, InterviewerSettings, Job, JobStatus, Recruiter, RecruiterRole, Report, TranscriptRole,
+  TranscriptTurn, UpdateRecruiterRoleResult,
 } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { applyFact, emptyMemory, type CandidateMemory, type FactInput } from "@/lib/interview/memory";
@@ -135,6 +136,7 @@ export async function createAgencyWithRecruiter(input: {
           .single(),
       ) as Recruiter,
     );
+    check(await sb().from("agencies").update({ created_by: userId }).eq("id", agencyId));
     await seedStarterJobs(agencyId, agencyName);
     return recruiter;
   } catch (err) {
@@ -307,6 +309,42 @@ export async function revokeAgencyInvite(agencyId: string, inviteId: string): Pr
   return rows.length > 0;
 }
 
+export async function updateAgencyRecruiterRole(input: {
+  agencyId: string;
+  actorId: string;
+  targetId: string;
+  role: RecruiterRole;
+}): Promise<UpdateRecruiterRoleResult> {
+  const agency = await getAgency(input.agencyId);
+  if (!agency) return "not_found";
+  const members = await listAgencyRecruiters(input.agencyId);
+  const actor = members.find((r) => r.id === input.actorId);
+  const target = members.find((r) => r.id === input.targetId);
+  if (!actor || !target) return "not_found";
+
+  const allowed = canSetRecruiterRole({
+    actorId: actor.id,
+    actorRole: actor.role,
+    targetId: target.id,
+    targetRole: target.role,
+    newRole: input.role,
+    adminId: agencyAdminId(agency, members),
+    ownerCount: members.filter((r) => r.role === "owner").length,
+  });
+  if (!allowed) return "forbidden";
+
+  check(
+    await sb()
+      .from("recruiters")
+      .update({ role: input.role })
+      .eq("id", target.id)
+      .eq("agency_id", input.agencyId)
+      .select("id")
+      .single(),
+  );
+  return "ok";
+}
+
 export async function updateAgency(agencyId: string, patch: { name: string }): Promise<Agency | null> {
   const name = patch.name.trim();
   const row = check(await sb().from("agencies").update({ name }).eq("id", agencyId).select("*").maybeSingle());
@@ -442,6 +480,7 @@ async function insertSession(
     token: newToken(), candidate_label: label, candidate_email: email,
     invited_at: input.invited ? t : null, is_synthetic: false,
     status: "created", mode: null, engine: null, end_reason: null, live_starts: 0, memory: emptyMemory(),
+    recruiter_status: "to_review", recruiter_rating: null, is_favorite: false, next_action: null,
     created_at: t, started_at: null, completed_at: null,
   };
   return asSession(check(await sb().from("sessions").insert(session).select("*").single()));
@@ -476,6 +515,32 @@ export async function listSessions(agencyId: string, filter: { jobId?: string } 
 export async function getSession(agencyId: string, id: string): Promise<InterviewSession | null> {
   const row = check(await sb().from("sessions").select("*").eq("id", id).eq("agency_id", agencyId).maybeSingle());
   return row ? asSession(row) : null;
+}
+
+export type SessionReviewPatch = {
+  recruiter_status?: InterviewSession["recruiter_status"];
+  recruiter_rating?: number | null;
+  is_favorite?: boolean;
+  next_action?: InterviewSession["next_action"];
+};
+
+/** Updates recruiter review fields for an interview in this agency. */
+export async function updateSessionReview(
+  agencyId: string,
+  id: string,
+  patch: SessionReviewPatch,
+): Promise<InterviewSession | null> {
+  const existing = await getSession(agencyId, id);
+  if (!existing) return null;
+  const update: Record<string, unknown> = {};
+  if (patch.recruiter_status !== undefined) update.recruiter_status = patch.recruiter_status;
+  if (patch.recruiter_rating !== undefined) update.recruiter_rating = patch.recruiter_rating;
+  if (patch.is_favorite !== undefined) update.is_favorite = patch.is_favorite;
+  if (patch.next_action !== undefined) update.next_action = patch.next_action;
+  if (!Object.keys(update).length) return existing;
+  return asSession(
+    check(await sb().from("sessions").update(update).eq("id", id).eq("agency_id", agencyId).select("*").single()),
+  );
 }
 
 /** Deletes an interview; its transcript and report go with it (on delete cascade). */
