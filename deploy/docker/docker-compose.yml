@@ -117,7 +117,7 @@ services:
       BACKUP_ALERT_TO: ${BACKUP_ALERT_TO:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-RecruitAI <onboarding@resend.dev>}
-      BACKUP_SCRIPT_REV: "4"
+      BACKUP_SCRIPT_REV: "5"
     volumes:
       - recruitai_backups:/backups
       - recruitai_branding:/data

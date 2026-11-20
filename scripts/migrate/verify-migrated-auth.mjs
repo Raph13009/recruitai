@@ -84,6 +84,15 @@ async function sendResetEmail(to, resetUrl) {
 }
 
 async function main() {
+  const totals = await pool.query(
+    `select
+       count(*)::int as recruiters,
+       count(*) filter (where must_reset_password or password_hash is null)::int as must_reset,
+       count(*) filter (where password_hash is not null and not must_reset_password)::int as can_login
+     from recruiters`,
+  );
+  console.log(JSON.stringify({ phase: "totals", ...totals.rows[0] }));
+
   const { rows } = await pool.query(
     `select id, email, must_reset_password, password_hash is null as no_hash
      from recruiters
